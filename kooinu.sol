@@ -215,7 +215,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 public _totalDistributionSharesBP;
 
     // Total supply and limits
-    uint256 private constant _totalSupply = 10000000000000 * (10 ** _decimals);
+    uint256 private constant _totalSupply = 1000000000000000 * (10 ** _decimals); // 1,000,000,000,000,000 KOO
     uint256 public _maxTxAmount = _totalSupply; 
     uint256 public _walletMax = _totalSupply;
     uint256 private minimumTokensBeforeSwap = _totalSupply / 100; // 1% of total supply
