@@ -1,0 +1,2 @@
+# kooinu
+new kooinu coin
