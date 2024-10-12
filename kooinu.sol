@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.28;
 
 /**
  * @title KooInu (KOO) Smart Contract
@@ -129,7 +129,6 @@ interface IUniswapV2Factory {
 }
 
 /// @notice Interface for the Uniswap V2 Router02.
-/// @notice Interface for the Uniswap V2 Router02.
 interface IUniswapV2Router02 {
     function factory() external pure returns (address);
     function WETH() external pure returns (address);
@@ -160,13 +159,12 @@ interface IUniswapV2Router02 {
         uint deadline
     ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
 
-    // **Add the getAmountsOut function declaration**
+    // Add the getAmountsOut function declaration
     function getAmountsOut(
         uint amountIn,
         address[] calldata path
     ) external view returns (uint[] memory amounts);
 }
-
 
 /// @notice Main contract implementing the ERC20 token with additional features.
 contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
@@ -304,7 +302,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 public constant GOVERNANCE_DELAY = 1 days; // Time delay for executing proposals
     uint256 public constant PROPOSAL_EXPIRY_PERIOD = 7 days; // Proposal expiry time
 
-    uint256 public constant MIN_SIGNATURES = 2; // Minimum number of approvals required
+    uint256 public constant MIN_SIGNATURES = 3; // Minimum number of approvals required (for 5 signers)
     mapping(address => bool) public isSigner;
     address[] public signers;
 
@@ -338,11 +336,14 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     
     /**
      * @dev Constructor to initialize the contract.
+     * @param initialSigners An array of five addresses to be set as initial signers.
      */
-    constructor () ReentrancyGuard() {
+    constructor (address[] memory initialSigners) ReentrancyGuard() {
+        require(initialSigners.length == 5, "KOO: Must provide exactly 5 signers");
+
         // Set the marketing and team wallet addresses
-        marketingWalletAddress = payable(0x7184eAC82c0C3F6bcdFD1c28A508dC4a18120b1e); // Marketing Address
-        teamWalletAddress = payable(0xa26809d31cf0cCd4d11C520F84CE9a6Fc4d4bb75); // Team Address
+        marketingWalletAddress = payable(0x5EE2a5C3cf8dFFd634C89b275A0C8C88f68Fc9B9); // Marketing Address
+        teamWalletAddress = payable(0x10f7baf7abB2c3238deffab982abAc5e4C6FBb66); // Team Address
             
         // Initialize Uniswap router with the specified address
         IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(
@@ -391,10 +392,14 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         maxTotalRewards = stakingRewardPool;
 
         // Initialize governance signers
-        // Add the deployer as the first signer
-        isSigner[_msgSender()] = true;
-        signers.push(_msgSender());
-        emit SignerAdded(_msgSender());
+        for(uint256 i = 0; i < initialSigners.length; i++) {
+            address signer = initialSigners[i];
+            require(signer != address(0), "KOO: Zero address cannot be a signer");
+            require(!isSigner[signer], "KOO: Signer already added");
+            isSigner[signer] = true;
+            signers.push(signer);
+            emit SignerAdded(signer);
+        }
     }
 
     // ----------------- ERC20 Standard Functions -----------------
@@ -661,27 +666,31 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     /**
      * @dev Swaps ETH for tokens and burns them (buyback).
      */
-    function buyBackTokens(uint256 amount) private lockTheSwap {
-        if(amount > 0){
-            address[] memory path = new address[](2);
-            path[0] = uniswapV2Router.WETH();
-            path[1] = address(this);
+    // Ensure the function is marked with nonReentrant to prevent reentrancy attacks.
+    function buyBackTokens(uint256 amount) private nonReentrant lockTheSwap {
+        require(amount > 0, "KOO: Buyback amount must be greater than 0");
 
-            // Get expected token amount to set as amountOutMin for slippage protection
-            uint256[] memory amountsOut = uniswapV2Router.getAmountsOut(amount, path);
-            uint256 amountOutMin = amountsOut[1] * 95 / 100; // Accept at least 95% of expected tokens
+        address[] memory path = new address[](2);
+        path[0] = uniswapV2Router.WETH();
+        path[1] = address(this);
 
-            // Execute the swap
-            uniswapV2Router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: amount}(
-                amountOutMin, // Slippage protection
-                path,
-                deadAddress, // Send tokens to dead address (burn)
-                block.timestamp
-            );
+        // Get expected token amount to set as amountOutMin for slippage protection
+        uint256[] memory amountsOut = uniswapV2Router.getAmountsOut(amount, path);
+        uint256 amountOutMin = amountsOut[1] * 95 / 100; // Accept at least 95% of expected tokens
 
-            emit SwapETHForTokens(amount, path);
-        }
+        // Ensure state changes are made before calling external contracts (e.g., update any necessary internal tracking).
+        
+        // External call to Uniswap for token swap and burn
+        uniswapV2Router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: amount}(
+            amountOutMin, // Slippage protection
+            path,
+            deadAddress, // Send tokens to dead address (burn)
+            block.timestamp
+        );
+
+        emit SwapETHForTokens(amount, path);
     }
+
 
     /**
      * @dev Adds liquidity to Uniswap using the specified token and ETH amounts.
@@ -742,8 +751,11 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Sets the buy taxes: liquidity, marketing, team, and buyback fees.
      * Can only be called via governance proposals.
      */
+    // Corrected function with access control
     function setBuyTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP, uint256 newBuybackFeeBP) external {
         require(msg.sender == address(this), "KOO: Only via governance");
+
+        // Ensure the new fees are within limits
         require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Liquidity fee too high");
         require(newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Marketing fee too high");
         require(newTeamFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Team fee too high");
@@ -752,15 +764,19 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP + newBuybackFeeBP;
         require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KOO: Total fee too high");
 
+        // Update the fees
         _buyLiquidityFeeBP = newLiquidityFeeBP;
         _buyMarketingFeeBP = newMarketingFeeBP;
         _buyTeamFeeBP = newTeamFeeBP;
         _buyBuybackFeeBP = newBuybackFeeBP;
 
+        // Update total taxes for buying
         _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP + _buyBuybackFeeBP;
 
         emit BuyTaxesUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP, newBuybackFeeBP);
     }
+
+
 
     /**
      * @dev Sets the sell taxes: liquidity, marketing, team, and buyback fees.
@@ -871,16 +887,23 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     }
 
     // ----------------- Withdrawal Functions -----------------
-
+    
     /**
      * @dev Withdraws Ether from the contract to the owner's address.
      */
+    // Function to withdraw any Ether balance from the contract
     function withdrawEther(uint256 amount) external onlyOwner nonReentrant {
         uint256 contractBalance = address(this).balance;
-        require(contractBalance >= amount, "KOO: Insufficient Ether");
+        require(contractBalance >= amount, "KOO: Insufficient Ether balance");
         payable(owner()).transfer(amount);
         emit EtherWithdrawn(owner(), amount);
     }
+
+    // Fallback function for handling calls to non-existent functions
+    fallback() external payable {
+        // You can add any specific logic here if needed
+    }
+
 
     /**
      * @dev Withdraws ERC20 tokens mistakenly sent to the contract.
@@ -1030,16 +1053,23 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      */
     function _updateRewards(address user) internal {
         StakeInfo storage userStake = stakes[user];
-        if(userStake.amount > 0){
+
+        if(userStake.amount > 0) {
             uint256 stakingDuration = block.timestamp - userStake.lastStakeTime;
+
+            // Use built-in overflow protection in Solidity 0.8.x
             uint256 reward = userStake.amount * rewardRatePerSecond * stakingDuration;
+
+            // Accumulate rewards to reward debt
             userStake.rewardDebt += reward;
+
+            // Update last stake time to the current block timestamp
             userStake.lastStakeTime = block.timestamp;
         }
     }
 
     // ----------------- Governance Functions -----------------
-
+    
     /**
      * @dev Adds a new signer. Only callable by the owner.
      */
@@ -1102,9 +1132,9 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      */
     function approveProposal(uint256 proposalId) external onlySigner {
         Proposal storage proposal = proposals[proposalId];
-        require(proposal.id != 0, "KOO: Proposal not exist");
-        require(!proposal.executed, "KOO: Proposal executed");
-        require(!proposalApprovals[proposalId][msg.sender], "KOO: Already approved");
+        require(proposal.id != 0, "KOO: Proposal does not exist");
+        require(!proposal.executed, "KOO: Proposal already executed");
+        require(!proposalApprovals[proposalId][msg.sender], "KOO: Already approved by caller");
         require(block.timestamp <= proposal.expiryTime, "KOO: Proposal expired");
 
         proposalApprovals[proposalId][msg.sender] = true;
@@ -1123,9 +1153,9 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      */
     function revokeApproval(uint256 proposalId) external onlySigner {
         Proposal storage proposal = proposals[proposalId];
-        require(proposal.id != 0, "KOO: Proposal not exist");
-        require(!proposal.executed, "KOO: Proposal executed");
-        require(proposalApprovals[proposalId][msg.sender], "KOO: Approval not found");
+        require(proposal.id != 0, "KOO: Proposal does not exist");
+        require(!proposal.executed, "KOO: Proposal already executed");
+        require(proposalApprovals[proposalId][msg.sender], "KOO: Approval not found for caller");
 
         proposalApprovals[proposalId][msg.sender] = false;
         proposal.approvalCount -= 1;
@@ -1138,10 +1168,10 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      */
     function executeProposal(uint256 proposalId) public nonReentrant onlySigner {
         Proposal storage proposal = proposals[proposalId];
-        require(proposal.id != 0, "KOO: Proposal not exist");
-        require(!proposal.executed, "KOO: Proposal executed");
+        require(proposal.id != 0, "KOO: Proposal does not exist");
+        require(!proposal.executed, "KOO: Proposal already executed");
         require(proposal.approvalCount >= MIN_SIGNATURES, "KOO: Not enough approvals");
-        require(block.timestamp >= proposal.executeTime, "KOO: Delay not passed");
+        require(block.timestamp >= proposal.executeTime, "KOO: Delay period not passed");
         require(block.timestamp <= proposal.expiryTime, "KOO: Proposal expired");
 
         // Apply the proposed change based on proposal type
@@ -1150,6 +1180,10 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         } else if(proposal.proposalType == ProposalType.FeeChange) {
             // To prevent multiple function calls via governance, we call the function via the contract itself
             // Here, we can set buy and sell taxes to the new value
+            // Assuming newValue is a base value for all fee components (customize as needed)
+            // For more granular control, modify the proposal to include individual fee components
+
+            // Example: Setting all buy taxes to newValue
             (bool success, ) = address(this).call(
                 abi.encodeWithSignature(
                     "setBuyTaxes(uint256,uint256,uint256,uint256)",
@@ -1159,7 +1193,9 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
                     proposal.newValue
                 )
             );
-            require(success, "KOO: Fee change failed");
+            require(success, "KOO: Buy fee change failed");
+
+            // Example: Setting all sell taxes to newValue
             (success, ) = address(this).call(
                 abi.encodeWithSignature(
                     "setSellTaxes(uint256,uint256,uint256,uint256)",
@@ -1169,7 +1205,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
                     proposal.newValue
                 )
             );
-            require(success, "KOO: Fee change failed");
+            require(success, "KOO: Sell fee change failed");
         }
 
         proposal.executed = true;
@@ -1181,12 +1217,12 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Modifier to restrict access to only authorized signers.
      */
     modifier onlySigner() {
-        require(isSigner[msg.sender], "KOO: Caller not signer");
+        require(isSigner[msg.sender], "KOO: Caller is not a signer");
         _;
     }
 
     // ----------------- Additional Administrative Functions -----------------
-
+    
     /**
      * @dev Allows the owner to set the marketing wallet address.
      */
@@ -1209,12 +1245,20 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Allows the owner to set the staking start time.
      */
     function setStakingStartTime(uint256 timestamp) external onlyOwner {
+        // Ensure the provided timestamp is not in the past
+        require(timestamp >= block.timestamp, "KOO: Staking start time cannot be in the past");
+
+        // Optionally, ensure the timestamp is not set too far in the future (e.g., max 1 year)
+        uint256 maxFutureTime = block.timestamp + 365 days;
+        require(timestamp <= maxFutureTime, "KOO: Staking start time cannot be set too far in the future");
+
         stakingStartTime = timestamp;
         emit StakingStartTimeUpdated(timestamp);
     }
 
-    // ----------------- Events for Additional Administrative Functions -----------------
 
+    // ----------------- Events for Additional Administrative Functions -----------------
+    
     /**
      * @dev Emitted when the marketing wallet address is updated.
      */
@@ -1236,7 +1280,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Initializes the staking reward pool. Can only be called once by the owner.
      */
     function initializeStakingPool() external onlyOwner {
-        require(stakingStartTime == 0, "KOO: Staking initialized");
+        require(stakingStartTime == 0, "KOO: Staking already initialized");
         stakingRewardPool = _totalSupply * 10 / 100; // Allocate 10% for staking rewards
         _balances[address(this)] += stakingRewardPool;
         emit Transfer(address(0), address(this), stakingRewardPool);
@@ -1245,7 +1289,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     }
 
     // ----------------- Governance Helper Functions -----------------
-
+    
     /**
      * @dev Returns the list of current signers.
      */
@@ -1295,7 +1339,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         uint256 count = 0;
         uint256 len = signers.length;
         for (uint256 i = 0; i < len; ++i) {
-            if (proposalApprovals[proposalId][signers[i]]) {
+            if(proposalApprovals[proposalId][signers[i]]) {
                 count++;
             }
         }
@@ -1303,7 +1347,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         approvedSigners = new address[](count);
         uint256 index = 0;
         for (uint256 i = 0; i < len; ++i) {
-            if (proposalApprovals[proposalId][signers[i]]) {
+            if(proposalApprovals[proposalId][signers[i]]) {
                 approvedSigners[index] = signers[i];
                 index++;
             }
@@ -1345,4 +1389,3 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         // In practice, this could trigger an off-chain audit or other security mechanisms
     }
 }
-
