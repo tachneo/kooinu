@@ -702,8 +702,8 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Internal function to handle approvals.
      */
     function _approve(address owner_, address spender, uint256 amount) private {
-        require(owner_ != address(0), "KooInu: approve from zero address");
-        require(spender != address(0), "KooInu: approve to zero address"); // Prevent approving to the zero address
+        require(owner_ != address(0) && spender != address(0), "KooInu: invalid addresses");
+
 
         _allowances[owner_][spender] = amount; // Set the allowance
         emit Approval(owner_, spender, amount); // Emit Approval event
@@ -761,7 +761,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
         _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP;
 
-        emit BuyTaxesUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP);
+        emit BuyUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP);
     }
 
     /**
@@ -1127,7 +1127,8 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     /**
      * @dev Emitted when the buy taxes are updated.
      */
-    event BuyTaxesUpdated(uint256 liquidityFeeBP, uint256 marketingFeeBP, uint256 teamFeeBP);
+    event BuyUpdated(uint256 lFeeBP, uint256 mFeeBP, uint256 tFeeBP);
+
 
     /**
      * @dev Emitted when the sell taxes are updated.
