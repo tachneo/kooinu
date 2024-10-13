@@ -1,23 +1,39 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity ^0.8.27;
 
 /**
  * @title KooInu (KOO) Smart Contract
- * @dev ERC20 Token with Fee Management, Automated Liquidity Provision, Staking with Reward Pool,
- * Enhanced Security Features, Governance Mechanisms, and a Buyback Reward system.
+ * @dev ERC20 Token with Fee Management, Automated Liquidity Provision, and Enhanced Security Features
+ *
+ * @custom:dev-run-script ./scripts/deploy.js
  */
 
-/// @notice Context provides information about the current execution context.
+/**
+ * @dev Provides information about the current execution context, including the
+ * sender of the transaction and its data.
+ */
 abstract contract Context {
     function _msgSender() internal view virtual returns (address payable) {
         return payable(msg.sender);
     }
+
+    function _msgData() internal view virtual returns (bytes memory) {
+        this; // Silence state mutability warning without generating bytecode
+        return msg.data;
+    }
 }
 
-/// @notice Ownable contract module which provides basic access control mechanism.
+/**
+ * @dev Contract module which provides a basic access control mechanism, where
+ * there is an account (an owner) that can be granted exclusive access to
+ * specific functions.
+ */
 contract Ownable is Context {
     address private _owner;
+    address private _previousOwner;
+    uint256 private _lockTime;
 
+    // Event emitted when ownership is transferred
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /**
@@ -37,7 +53,7 @@ contract Ownable is Context {
     }   
     
     /**
-     * @dev Throws if called by any account other than the owner.
+     * @dev Modifier to restrict function access to the owner only.
      */
     modifier onlyOwner() {
         require(_owner == _msgSender(), "Ownable: caller is not the owner");
@@ -45,16 +61,63 @@ contract Ownable is Context {
     }
         
     /**
-     * @dev Transfers ownership of the contract to a new account (`newOwner`). Can only be called by the current owner.
+     * @dev Allows the current owner to relinquish control of the contract.
+     */
+    function waiveOwnership() public virtual onlyOwner {
+        emit OwnershipTransferred(_owner, address(0));
+        _owner = address(0);
+    }
+
+    /**
+     * @dev Transfers ownership of the contract to a new account (`newOwner`).
+     * Can only be called by the current owner.
      */
     function transferOwnership(address newOwner) public virtual onlyOwner {
-        require(newOwner != address(0), "Ownable: new owner zero address");
+        require(newOwner != address(0), "Ownable: new owner is the zero address");
         emit OwnershipTransferred(_owner, newOwner);
         _owner = newOwner;
     }
+
+    /**
+     * @dev Returns the unlock time if the contract is locked.
+     */
+    function getUnlockTime() public view returns (uint256) {
+        return _lockTime;
+    }
+        
+    /**
+     * @dev Returns the current block timestamp.
+     */
+    function getTime() public view returns (uint256) {
+        return block.timestamp;
+    }
+
+    /**
+     * @dev Locks the contract for the owner for the specified amount of time.
+     * Can only be called by the current owner.
+     */
+    function lock(uint256 time) public virtual onlyOwner {
+        _previousOwner = _owner;
+        _owner = address(0);
+        _lockTime = block.timestamp + time;
+        emit OwnershipTransferred(_owner, address(0));
+    }
+        
+    /**
+     * @dev Unlocks the contract for the owner after the lock time has passed.
+     * Can only be called by the previous owner.
+     */
+    function unlock() public virtual {
+        require(_previousOwner == _msgSender(), "Ownable: caller is not the previous owner");
+        require(block.timestamp > _lockTime, "Ownable: contract is still locked");
+        emit OwnershipTransferred(address(0), _previousOwner);
+        _owner = _previousOwner;
+    }
 }
 
-/// @notice IERC20 interface defines the standard functions and events for ERC20 tokens.
+/**
+ * @dev Interface defining the ERC20 standard functions and events.
+ */
 interface IERC20 {
     function totalSupply() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
@@ -68,12 +131,15 @@ interface IERC20 {
     event Approval(address indexed owner_, address indexed spender, uint256 value);
 }
 
-/// @notice Address library provides utility functions related to the address type.
+/**
+ * @dev Library with utility functions related to the address type.
+ */
 library Address {
     /**
      * @dev Returns true if `account` is a contract.
      *
-     * IMPORTANT: It is unsafe to assume that an address for which this function returns
+     * IMPORTANT:
+     * It is unsafe to assume that an address for which this function returns
      * false is an externally-owned account (EOA) and not a contract.
      */
     function isContract(address account) internal view returns (bool) {
@@ -84,8 +150,10 @@ library Address {
      * @dev Replacement for Solidity's `transfer`: sends `amount` wei to
      * `recipient`, forwarding all available gas and reverting on errors.
      *
-     * IMPORTANT: Because control is transferred to `recipient`, care must be taken
-     * to not create reentrancy vulnerabilities.
+     * IMPORTANT:
+     * Because control is transferred to `recipient`, care must be taken
+     * to not create reentrancy vulnerabilities. Consider using
+     * {ReentrancyGuard} or the checks-effects-interactions pattern.
      */
     function sendValue(address payable recipient, uint256 amount) internal {
         require(address(this).balance >= amount, "Address: insufficient balance");
@@ -96,12 +164,17 @@ library Address {
     }
 }
 
-/// @notice ReentrancyGuard contract to prevent reentrant calls.
+/**
+ * @dev Reentrancy guard contract to prevent reentrant calls.
+ */
 abstract contract ReentrancyGuard {
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+    
     uint256 private _status;
     
     constructor () {
-        _status = 1;
+        _status = _NOT_ENTERED;
     }
     
     /**
@@ -109,43 +182,99 @@ abstract contract ReentrancyGuard {
      * Applying the nonReentrant modifier to functions ensures that there are no nested (reentrant) calls to them.
      */
     modifier nonReentrant() {
-        require(_status != 2, "ReentrancyGuard: reentrant call");
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
         
-        _status = 2;
+        _status = _ENTERED;
         
         _;
         
-        _status = 1;
+        _status = _NOT_ENTERED;
     }
 }
 
-/// @notice Interface for the Uniswap V2 Factory.
+/**
+ * @dev Interface for the Uniswap V2 Factory.
+ */
 interface IUniswapV2Factory {
+    event PairCreated(address indexed token0, address indexed token1, address pair, uint);
+
+    function feeTo() external view returns (address);
+    function feeToSetter() external view returns (address);
+
+    function getPair(address tokenA, address tokenB) external view returns (address pair);
+    function allPairs(uint) external view returns (address pair);
+    function allPairsLength() external view returns (uint);
+
     function createPair(address tokenA, address tokenB) external returns (address pair);
+
+    function setFeeTo(address) external;
+    function setFeeToSetter(address) external;
 }
 
-/// @notice Interface for the Uniswap V2 Router02.
-interface IUniswapV2Router02 {
+/**
+ * @dev Interface for the Uniswap V2 Pair.
+ */
+interface IUniswapV2Pair {
+    // ERC20 metadata functions
+    function name() external view returns (string memory);
+    function symbol() external view returns (string memory);
+    function decimals() external view returns (uint8);
+        
+    // ERC20 supply and balance functions
+    function totalSupply() external view returns (uint);
+    function balanceOf(address owner_) external view returns (uint);
+    function allowance(address owner_, address spender) external view returns (uint);
+
+    // ERC20 approval and transfer functions
+    function approve(address spender, uint value) external returns (bool);
+    function transfer(address to, uint value) external returns (bool);
+    function transferFrom(address from,address to,uint value) external returns (bool);
+
+    // EIP-2612 permit functionality
+    function permit(
+        address owner_, 
+        address spender, 
+        uint value, 
+        uint deadline, 
+        uint8 v, 
+        bytes32 r, 
+        bytes32 s
+    ) external;
+        
+    // Liquidity functions
+    function burn(address to) external returns (uint amount0, uint amount1);
+    function swap(
+        uint amount0Out, 
+        uint amount1Out, 
+        address to, 
+        bytes calldata data
+    ) external;
+    function skim(address to) external;
+    function sync() external;
+
+    // Initializes the pair
+    function initialize(address, address) external;
+}
+
+/**
+ * @dev Interface for the Uniswap V2 Router01.
+ */
+interface IUniswapV2Router01 {
     function factory() external pure returns (address);
     function WETH() external pure returns (address);
 
-    // Swap functions
-    function swapExactTokensForETHSupportingFeeOnTransferTokens(
-        uint amountIn,
-        uint amountOutMin,
-        address[] calldata path,
+    // Liquidity management functions
+    function addLiquidity(
+        address tokenA,
+        address tokenB,
+        uint amountADesired,
+        uint amountBDesired,
+        uint amountAMin,
+        uint amountBMin,
         address to,
         uint deadline
-    ) external;
-
-    function swapExactETHForTokensSupportingFeeOnTransferTokens(
-        uint amountOutMin,
-        address[] calldata path,
-        address to,
-        uint deadline
-    ) external payable;
-
-    // Liquidity functions
+    ) external returns (uint amountA, uint amountB, uint liquidity);
+        
     function addLiquidityETH(
         address token,
         uint amountTokenDesired,
@@ -154,30 +283,212 @@ interface IUniswapV2Router02 {
         address to,
         uint deadline
     ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
-
-    // Get amounts out for swaps
-    function getAmountsOut(
+        
+    function removeLiquidity(
+        address tokenA,
+        address tokenB,
+        uint liquidity,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountA, uint amountB);
+        
+    function removeLiquidityETH(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountToken, uint amountETH);
+        
+    function removeLiquidityWithPermit(
+        address tokenA,
+        address tokenB,
+        uint liquidity,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline,
+        bool approveMax, 
+        uint8 v, 
+        bytes32 r, 
+        bytes32 s
+    ) external returns (uint amountA, uint amountB);
+        
+    function removeLiquidityETHWithPermit(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline,
+        bool approveMax, 
+        uint8 v, 
+        bytes32 r, 
+        bytes32 s
+    ) external returns (uint amountToken, uint amountETH);
+        
+    // Swap functions
+    function swapExactTokensForTokens(
         uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external returns (uint[] memory amounts);
+        
+    function swapTokensForExactTokens(
+        uint amountOut,
+        uint amountInMax,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external returns (uint[] memory amounts);
+        
+    function swapExactETHForTokens(
+        uint amountOutMin, 
+        address[] calldata path, 
+        address to, 
+        uint deadline
+    )
+        external
+        payable
+        returns (uint[] memory amounts);
+        
+    function swapTokensForExactETH(
+        uint amountOut, 
+        uint amountInMax, 
+        address[] calldata path, 
+        address to, 
+        uint deadline
+    )
+        external
+        returns (uint[] memory amounts);
+        
+    function swapExactTokensForETH(
+        uint amountIn, 
+        uint amountOutMin, 
+        address[] calldata path, 
+        address to, 
+        uint deadline
+    )
+        external
+        returns (uint[] memory amounts);
+        
+    function swapETHForExactTokens(
+        uint amountOut, 
+        address[] calldata path, 
+        address to, 
+        uint deadline
+    )
+        external
+        payable
+        returns (uint[] memory amounts);
+
+    // Utility functions
+    function quote(
+        uint amountA, 
+        uint reserveA, 
+        uint reserveB
+    ) external pure returns (uint amountB);
+        
+    function getAmountOut(
+        uint amountIn, 
+        uint reserveIn, 
+        uint reserveOut
+    ) external pure returns (uint amountOut);
+        
+    function getAmountIn(
+        uint amountOut, 
+        uint reserveIn, 
+        uint reserveOut
+    ) external pure returns (uint amountIn);
+        
+    function getAmountsOut(
+        uint amountIn, 
+        address[] calldata path
+    ) external view returns (uint[] memory amounts);
+        
+    function getAmountsIn(
+        uint amountOut, 
         address[] calldata path
     ) external view returns (uint[] memory amounts);
 }
 
-/// @notice Main contract implementing the ERC20 token with additional features.
+/**
+ * @dev Interface for the Uniswap V2 Router02, extending Router01 with additional functions.
+ */
+interface IUniswapV2Router02 is IUniswapV2Router01 {
+    // Removes liquidity with support for fee on transfer tokens
+    function removeLiquidityETHSupportingFeeOnTransferTokens(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountETH);
+        
+    function removeLiquidityETHWithPermitSupportingFeeOnTransferTokens(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline,
+        bool approveMax, 
+        uint8 v, 
+        bytes32 r, 
+        bytes32 s
+    ) external returns (uint amountETH);
+
+    // Swaps with support for fee on transfer tokens
+    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external;
+        
+    function swapExactETHForTokensSupportingFeeOnTransferTokens(
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external payable;
+        
+    function swapExactTokensForETHSupportingFeeOnTransferTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external;
+}
+
+/**
+ * @dev Main contract implementing the ERC20 token with additional features.
+ */
 contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
-    using Address for address payable;
+        
+    using Address for address payable;  // Using Address library for address type
+        
+    // Token details
+    string private _name = "KooInu";
+    string private _symbol = "PPOT";
+    uint8 private _decimals = 9;
 
-    // ----------------- Token Details -----------------
-    string private constant _name = "Koo Inu";
-    string private constant _symbol = "KOO";
-    uint8 private constant _decimals = 9;
-
-    // ----------------- Wallet Addresses -----------------
+    // Wallet addresses for marketing and team funds
     address payable public marketingWalletAddress;
     address payable public teamWalletAddress;
-    address public immutable deadAddress = address(0xdead); // Dead address for burning tokens
-
-    // ----------------- Mappings -----------------
+    address public immutable deadAddress = 0x000000000000000000000000000000000000dEaD; // Dead address for burning tokens
+        
+    // Mapping to keep track of each account's balance
     mapping (address => uint256) private _balances;
+    // Mapping to keep track of allowances
     mapping (address => mapping (address => uint256)) private _allowances;
         
     // Mappings to manage fee and limit exemptions
@@ -186,32 +497,28 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     mapping (address => bool) public isTxLimitExempt;
     mapping (address => bool) public isMarketPair;
 
-    // ----------------- Fee Parameters (Basis Points) -----------------
-    // Fees for buying
+    // Fees for buying (in basis points: 1 BP = 0.01%)
     uint256 public _buyLiquidityFeeBP = 200; // 2%
     uint256 public _buyMarketingFeeBP = 200; // 2%
     uint256 public _buyTeamFeeBP = 200; // 2%
-    uint256 public _buyBuybackFeeBP = 100; // 1%
         
-    // Fees for selling
+    // Fees for selling (in basis points)
     uint256 public _sellLiquidityFeeBP = 200; // 2%
     uint256 public _sellMarketingFeeBP = 200; // 2%
     uint256 public _sellTeamFeeBP = 400; // 4%
-    uint256 public _sellBuybackFeeBP = 100; // 1%
 
-    // Distribution shares
+    // Distribution shares (in basis points)
     uint256 public _liquidityShareBP = 400; // 4%
     uint256 public _marketingShareBP = 400; // 4%
     uint256 public _teamShareBP = 1600; // 16%
-    uint256 public _buybackShareBP = 600; // 6%
 
-    // Total taxes
-    uint256 public _totalTaxIfBuyingBP;
-    uint256 public _totalTaxIfSellingBP;
-    uint256 public _totalDistributionSharesBP;
+    // Total taxes (in basis points)
+    uint256 public _totalTaxIfBuyingBP = 600; // 6%
+    uint256 public _totalTaxIfSellingBP = 800; // 8%
+    uint256 public _totalDistributionSharesBP = 2400; // 24%
 
-    // ----------------- Supply and Limits -----------------
-    uint256 private constant _totalSupply = 1000000000000000 * (10 ** _decimals); // One quadrillion tokens
+    // Total supply and limits
+    uint256 private _totalSupply = 10000000000000000000 * (10 ** _decimals);
     uint256 public _maxTxAmount = _totalSupply; 
     uint256 public _walletMax = _totalSupply;
     uint256 private minimumTokensBeforeSwap = _totalSupply / 100; // 1% of total supply
@@ -222,13 +529,13 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
     // Minimum and maximum transaction and wallet limits
     uint256 public minTxAmount = _totalSupply / 10000; // Minimum 0.01% of total supply
-    uint256 public maxTxAmountCap = _totalSupply; // Max is total supply
+    uint256 public maXtxAmounT = _totalSupply; // Max is total supply
     uint256 public minWalletLimit = _totalSupply / 10000; // Minimum 0.01% of total supply
-    uint256 public maxWalletLimit = _totalSupply; // Max is total supply
+    uint256 public maxWalleTlimiT = _totalSupply; // Max is total supply
 
-    // ----------------- Uniswap Router and Pair -----------------
-    IUniswapV2Router02 public immutable uniswapV2Router;
-    address public immutable uniswapPair;
+    // Uniswap router and pair addresses
+    IUniswapV2Router02 public uniswapV2Router;
+    address public uniswapPair;
         
     // Flags for swap and liquify functionality
     bool inSwapAndLiquify;
@@ -236,19 +543,15 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     bool public swapAndLiquifyByLimitOnly = false;
     bool public checkWalletLimit = true;
 
-    // Swap limits
-    uint256 public maxSwapAmount = _totalSupply / 200; // 0.5% of total supply
-
-    // ----------------- Events -----------------
-    // Swap and Liquify Events
+    // Events related to swap and liquify
     event SwapAndLiquifyEnabledUpdated(bool enabled);
     event SwapAndLiquify(
         uint256 tokensSwapped,
         uint256 ethReceived,
-        uint256 tokensIntoLiquidity
+        uint256 tokensIntoLiqudity
     );
         
-    // Swap Events
+    // Events for token and ETH swaps
     event SwapETHForTokens(
         uint256 amountIn,
         address[] path
@@ -259,204 +562,90 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         address[] path
     );
         
-    // Withdrawal Events
+    // Events for Ether and ERC20 withdrawals
     event EtherWithdrawn(address indexed owner, uint256 amount);
     event ERC20Withdrawn(address indexed owner, address indexed token, uint256 amount);
         
-    // Enhanced Access Control Events
-    event MarketPairStatusUpdated(address indexed account, bool newValue);
-    event TxLimitExemptStatusUpdated(address indexed holder, bool exempt);
-    event FeeExemptionStatusUpdated(address indexed account, bool newValue);
-    event BuyTaxesUpdated(uint256 liquidityFeeBP, uint256 marketingFeeBP, uint256 teamFeeBP, uint256 buybackFeeBP);
-    event SellTaxesUpdated(uint256 liquidityFeeBP, uint256 marketingFeeBP, uint256 teamFeeBP, uint256 buybackFeeBP);
-    event DistributionSettingsUpdated(uint256 liquidityShareBP, uint256 marketingShareBP, uint256 teamShareBP, uint256 buybackShareBP);
-    event MaxTxAmountUpdated(uint256 maxTxAmount);
-    event WalletLimitEnabled(bool enabled);
-    event WalletLimitExemptStatusUpdated(address indexed holder, bool exempt);
-    event WalletLimitUpdated(uint256 newLimit);
-    event NumTokensBeforeSwapUpdated(uint256 newLimit);
-    event SwapAndLiquifyByLimitOnlyUpdated(bool newValue);
-
-    // ----------------- Modifiers -----------------
-    /// @dev Modifier to prevent reentrancy during swap and liquify.
+    // Modifier to prevent reentrancy during swap and liquify
     modifier lockTheSwap {
         inSwapAndLiquify = true;
         _;
         inSwapAndLiquify = false;
     }
-
-    // ----------------- Staking Variables -----------------
-    struct StakeInfo {
-        uint256 amount;          // Amount of tokens staked
-        uint256 rewardDebt;      // Reward debt
-        uint256 lastStakeTime;   // Last time tokens were staked or rewards were claimed
-    }
-
-    mapping(address => StakeInfo) public stakes;
-    uint256 public totalStaked;
-    uint256 public rewardRatePerSecond; // Adjusted reward rate per second based on APR
-    uint256 public constant MAX_REWARD_RATE = 100; // Maximum reward rate per second (percentage per annum)
-    uint256 public stakingStartTime;
-
-    // Reward Pool
-    uint256 public stakingRewardPool;
-    uint256 public totalRewardsDistributed;
-    uint256 public maxTotalRewards;
-
-    // Staking Events
-    event Staked(address indexed user, uint256 amount);
-    event Unstaked(address indexed user, uint256 amount);
-    event RewardClaimed(address indexed user, uint256 reward);
-
-    // ----------------- Governance Variables -----------------
-    uint256 public constant GOVERNANCE_DELAY = 1 days; // Time delay for executing proposals
-    uint256 public constant PROPOSAL_EXPIRY_PERIOD = 7 days; // Proposal expiry time
-
-    uint256 public constant MIN_SIGNATURES = 2; // Minimum number of approvals required
-    mapping(address => bool) public isSigner;
-    address[] public signers;
-
-    struct Proposal {
-        uint256 id;
-        ProposalType proposalType;
-        address proposer;
-        uint256 newValue;
-        uint256 proposedTime;
-        uint256 executeTime;
-        uint256 expiryTime;
-        uint256 approvalCount;
-        bool executed;
-    }
-
-    enum ProposalType { RewardRateChange, FeeChange }
-
-    uint256 public proposalCount;
-    mapping(uint256 => Proposal) public proposals;
-    mapping(uint256 => mapping(address => bool)) public proposalApprovals; // Tracks approvals for each proposal
-
-    // Governance Events
-    event SignerAdded(address indexed signer);
-    event SignerRemoved(address indexed signer);
-    event ProposalCreated(uint256 indexed proposalId, ProposalType proposalType, address indexed proposer, uint256 newValue, uint256 executeTime, uint256 expiryTime);
-    event ProposalApproved(uint256 indexed proposalId, address indexed approver);
-    event ProposalRevoked(uint256 indexed proposalId, address indexed revoker);
-    event ProposalExecuted(uint256 indexed proposalId, uint256 newValue);
-    
-    // Declaration of the initial signers array
-    address[] private initialSigners; // Declare the initial signers array     
-    // ----------------- Constructor -----------------
-    /**
-     * @dev Constructor to initialize the contract with multiple initial signers.
-     */
-constructor () ReentrancyGuard() {
-    // Set the marketing and team wallet addresses
-    marketingWalletAddress = payable(0xf1214dBF1D1285D293604601154327A78580E6A4); // Marketing Address
-    teamWalletAddress = payable(0x3589D4cdB885137DBCA8662A5BD4F39079db8365); // Team Address
+        
+    // Constructor to initialize the contract
+    constructor () ReentrancyGuard() {
+        // Set the marketing and team wallet addresses
+        marketingWalletAddress = payable(0x7184eAC82c0C3F6bcdFD1c28A508dC4a18120b1e); // Marketing Address
+        teamWalletAddress = payable(0xa26809d31cf0cCd4d11C520F84CE9a6Fc4d4bb75); // Team Address
             
-    // Initialize Uniswap router with the specified address
-    IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(
-        0x10ED43C718714eb63d5aA57B78B54704E256024E // Example: PancakeSwap Router on BSC
-    ); 
+        // Initialize Uniswap router with the specified address
+        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(
+            0x10ED43C718714eb63d5aA57B78B54704E256024E // Example: PancakeSwap Router on BSC
+        ); 
 
-    // Create a Uniswap pair for this token
-    uniswapPair = IUniswapV2Factory(_uniswapV2Router.factory())
-        .createPair(address(this), _uniswapV2Router.WETH());
+        // Create a Uniswap pair for this token
+        uniswapPair = IUniswapV2Factory(_uniswapV2Router.factory())
+            .createPair(address(this), _uniswapV2Router.WETH());
 
-    // Set the Uniswap router
-    uniswapV2Router = _uniswapV2Router;
-    // Approve the Uniswap router to spend the total supply of tokens
-    _allowances[address(this)][address(uniswapV2Router)] = _totalSupply;
+        // Set the Uniswap router
+        uniswapV2Router = _uniswapV2Router;
+        // Approve the Uniswap router to spend the total supply of tokens
+        _allowances[address(this)][address(uniswapV2Router)] = _totalSupply;
 
-    // Exclude owner and contract from fee
-    isExcludedFromFee[owner()] = true;
-    isExcludedFromFee[address(this)] = true;
+        // Exclude owner and contract from fee
+        isExcludedFromFee[owner()] = true;
+        isExcludedFromFee[address(this)] = true;
             
-    // Calculate total taxes for buying and selling
-    _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP + _buyBuybackFeeBP;
-    _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP + _sellBuybackFeeBP;
-    _totalDistributionSharesBP = _liquidityShareBP + _marketingShareBP + _teamShareBP + _buybackShareBP;
+        // Calculate total taxes for buying and selling
+        _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP;
+        _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP;
+        _totalDistributionSharesBP = _liquidityShareBP + _marketingShareBP + _teamShareBP;
 
-    // Exempt owner, Uniswap pair, and contract from wallet limit
-    isWalletLimitExempt[owner()] = true;
-    isWalletLimitExempt[uniswapPair] = true;
-    isWalletLimitExempt[address(this)] = true;
+        // Exempt owner, Uniswap pair, and contract from wallet limit
+        isWalletLimitExempt[owner()] = true;
+        isWalletLimitExempt[address(uniswapPair)] = true;
+        isWalletLimitExempt[address(this)] = true;
             
-    // Exempt owner and contract from transaction limit
-    isTxLimitExempt[owner()] = true;
-    isTxLimitExempt[address(this)] = true;
+        // Exempt owner and contract from transaction limit
+        isTxLimitExempt[owner()] = true;
+        isTxLimitExempt[address(this)] = true;
 
-    // Mark the Uniswap pair as a market pair
-    isMarketPair[uniswapPair] = true;
+        // Mark the Uniswap pair as a market pair
+        isMarketPair[address(uniswapPair)] = true;
 
-    // Initialize staking reward pool
-    stakingRewardPool = _totalSupply * 10 / 100; // Allocate 10% for staking rewards
-    _balances[address(this)] = stakingRewardPool;
-    emit Transfer(address(0), address(this), stakingRewardPool);
-
-    uint256 ownerBalance = _totalSupply - stakingRewardPool;
-    _balances[_msgSender()] = ownerBalance;
-    emit Transfer(address(0), _msgSender(), ownerBalance);
-
-    maxTotalRewards = stakingRewardPool;
-
-    // Initialize reward rate per second based on an annual rate
-    uint256 annualRate = 10; // 10% annual rate
-    uint256 secondsInYear = 31536000; // Number of seconds in a year
-    rewardRatePerSecond = (annualRate * 1e18) / secondsInYear;
-
-    // Initialize staking start time to the current block timestamp
-    stakingStartTime = block.timestamp;
-
-    // Declare and initialize governance signers with multiple initial signers
-    // Initialize governance signers with multiple initial signers
-    initialSigners.push(_msgSender());
-    initialSigners.push(address(0x5EE2a5C3cf8dFFd634C89b275A0C8C88f68Fc9B9));
-    initialSigners.push(address(0x10f7baf7abB2c3238deffab982abAc5e4C6FBb66));
-
-    uint256 len = initialSigners.length;
-    for (uint256 i = 0; i < len; ) {
-        address signer = initialSigners[i];
-        require(signer != address(0), "KOO: Zero address cannot be a signer");
-        require(!isSigner[signer], "KOO: Signer already added");
-        isSigner[signer] = true;
-        signers.push(signer);
-        emit SignerAdded(signer);
-        unchecked { i++; }
+        // Assign the total supply to the owner
+        _balances[_msgSender()] = _totalSupply;
+        emit Transfer(address(0), _msgSender(), _totalSupply);
     }
-
-}
-
-
-
-
 
     // ----------------- ERC20 Standard Functions -----------------
-    
+
     /**
      * @dev Returns the name of the token.
      */
-    function name() public pure returns (string memory) {
+    function name() public view returns (string memory) {
         return _name;
     }
 
     /**
      * @dev Returns the symbol of the token.
      */
-    function symbol() public pure returns (string memory) {
+    function symbol() public view returns (string memory) {
         return _symbol;
     }
 
     /**
      * @dev Returns the decimals places of the token.
      */
-    function decimals() public pure returns (uint8) {
+    function decimals() public view returns (uint8) {
         return _decimals;
     }
 
     /**
      * @dev Returns the total supply of the token.
      */
-    function totalSupply() public pure override returns (uint256) {
+    function totalSupply() public view override returns (uint256) {
         return _totalSupply;
     }
 
@@ -475,30 +664,10 @@ constructor () ReentrancyGuard() {
     }
 
     /**
-     * @dev Approves a spender to spend a specified amount of tokens on behalf of the caller.
-     */
-    function approve(address spender, uint256 amount) public override returns (bool) {
-        require(spender != address(0), "KOO: approve zero address");
-        _approve(_msgSender(), spender, amount);
-        return true;
-    }
-
-    /**
-     * @dev Internal function to handle approvals.
-     */
-    function _approve(address owner_, address spender, uint256 amount) private {
-        require(owner_ != address(0), "KOO: approve from zero address"); // Prevent approving from the zero address
-        require(spender != address(0), "KOO: approve to zero address"); // Prevent approving to the zero address
-
-        _allowances[owner_][spender] = amount; // Set the allowance
-        emit Approval(owner_, spender, amount); // Emit Approval event
-    }
-
-    /**
      * @dev Increases the allowance of a spender.
      */
-    function increaseAllowance(address spender, uint256 addedValue) public returns (bool) {
-        require(spender != address(0), "KOO: increase allowance zero address");
+    function increaseAllowance(address spender, uint256 addedValue) public virtual returns (bool) {
+        require(spender != address(0), "KooInu: increase allowance for zero address");
         _approve(_msgSender(), spender, _allowances[_msgSender()][spender] + addedValue);
         return true;
     }
@@ -506,11 +675,10 @@ constructor () ReentrancyGuard() {
     /**
      * @dev Decreases the allowance of a spender.
      */
-    function decreaseAllowance(address spender, uint256 subtractedValue) public returns (bool) {
-        require(spender != address(0), "KOO: decrease allowance zero address");
-        uint256 currentAllowance = _allowances[_msgSender()][spender];
-        require(currentAllowance >= subtractedValue, "KOO: decreased allowance below zero");
-        _approve(_msgSender(), spender, currentAllowance - subtractedValue);
+    function decreaseAllowance(address spender, uint256 subtractedValue) public virtual returns (bool) {
+        require(spender != address(0), "KooInu: decrease allowance for zero address");
+        require(_allowances[_msgSender()][spender] >= subtractedValue, "KooInu: decreased allowance below zero");
+        _approve(_msgSender(), spender, _allowances[_msgSender()][spender] - subtractedValue);
         return true;
     }
 
@@ -522,7 +690,214 @@ constructor () ReentrancyGuard() {
     }
 
     /**
+     * @dev Approves a spender to spend a specified amount of tokens on behalf of the caller.
+     */
+    function approve(address spender, uint256 amount) public override returns (bool) {
+        require(spender != address(0), "KooInu: approve to zero address");
+        _approve(_msgSender(), spender, amount);
+        return true;
+    }
+
+    /**
+     * @dev Internal function to handle approvals.
+     */
+    function _approve(address owner_, address spender, uint256 amount) private {
+        require(owner_ != address(0), "KooInu: approve from zero address");
+        require(spender != address(0), "KooInu: approve to zero address"); // Prevent approving to the zero address
+
+        _allowances[owner_][spender] = amount; // Set the allowance
+        emit Approval(owner_, spender, amount); // Emit Approval event
+    }
+
+    // ----------------- Administrative Functions -----------------
+
+    /**
+     * @dev Sets the market pair status for a specific account.
+     * @param account The address to set as a market pair.
+     * @param newValue The boolean value indicating market pair status.
+     */
+    function setMarketPairStatus(address account, bool newValue) public onlyOwner {
+        isMarketPair[account] = newValue;
+        emit MarketPairStatusUpdated(account, newValue);
+    }
+
+    /**
+     * @dev Sets the transaction limit exemption status for a holder.
+     * @param holder The address to set exemption status.
+     * @param exempt The boolean value indicating exemption.
+     */
+    function setIsTxLimitExempt(address holder, bool exempt) external onlyOwner {
+        isTxLimitExempt[holder] = exempt;
+        emit TxLimitExemptStatusUpdated(holder, exempt);
+    }
+        
+    /**
+     * @dev Sets the fee exemption status for a specific account.
+     * @param account The address to set exemption status.
+     * @param newValue The boolean value indicating exemption.
+     */
+    function setIsExcludedFromFee(address account, bool newValue) public onlyOwner {
+        isExcludedFromFee[account] = newValue;
+        emit FeeExemptionStatusUpdated(account, newValue);
+    }
+
+    /**
+     * @dev Sets the buy taxes: liquidity, marketing, and team fees.
+     * @param newLiquidityFeeBP New liquidity fee percentage in basis points.
+     * @param newMarketingFeeBP New marketing fee percentage in basis points.
+     * @param newTeamFeeBP New team fee percentage in basis points.
+     */
+    function setBuyTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP) external onlyOwner {
+        require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Liquidity fee too high");
+        require(newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Marketing fee too high");
+        require(newTeamFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Team fee too high");
+
+        uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP;
+        require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KooInu: Total fee too high");
+
+        _buyLiquidityFeeBP = newLiquidityFeeBP;
+        _buyMarketingFeeBP = newMarketingFeeBP;
+        _buyTeamFeeBP = newTeamFeeBP;
+
+        _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP;
+
+        emit BuyTaxesUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP);
+    }
+
+    /**
+     * @dev Sets the sell taxes: liquidity, marketing, and team fees.
+     * @param newLiquidityFeeBP New liquidity fee percentage in basis points.
+     * @param newMarketingFeeBP New marketing fee percentage in basis points.
+     * @param newTeamFeeBP New team fee percentage in basis points.
+     */
+    function setSellTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP) external onlyOwner {
+        require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Liquidity fee too high");
+        require(newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Marketing fee too high");
+        require(newTeamFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Team fee too high");
+
+        uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP;
+        require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KooInu: Total fee too high");
+
+        _sellLiquidityFeeBP = newLiquidityFeeBP;
+        _sellMarketingFeeBP = newMarketingFeeBP;
+        _sellTeamFeeBP = newTeamFeeBP;
+
+        _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP;
+
+        emit SellTaxesUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP);
+    }
+        
+    /**
+     * @dev Sets the distribution shares for liquidity, marketing, and team.
+     * @param newLiquidityShareBP New liquidity share percentage in basis points.
+     * @param newMarketingShareBP New marketing share percentage in basis points.
+     * @param newTeamShareBP New team share percentage in basis points.
+     */
+    function setDistributionSettings(uint256 newLiquidityShareBP, uint256 newMarketingShareBP, uint256 newTeamShareBP) external onlyOwner {
+        _liquidityShareBP = newLiquidityShareBP;
+        _marketingShareBP = newMarketingShareBP;
+        _teamShareBP = newTeamShareBP;
+
+        _totalDistributionSharesBP = _liquidityShareBP + _marketingShareBP + _teamShareBP;
+
+        emit DistributionSettingsUpdated(newLiquidityShareBP, newMarketingShareBP, newTeamShareBP);
+    }
+        
+    /**
+     * @dev Sets the maximum transaction amount.
+     * @param maxTxAmount New maximum transaction amount.
+     */
+    function setMaxTxAmount(uint256 maxTxAmount) external onlyOwner {
+        require(maxTxAmount >= minTxAmount, "KooInu: Max transaction amount too low");
+        require(maxTxAmount <= maXtxAmounT, "KooInu: Max transaction amount too high");
+        _maxTxAmount = maxTxAmount;
+        emit MaxTxAmountUpdated(maxTxAmount);
+    }
+
+
+    /**
+     * @dev Enables or disables the wallet limit.
+     * @param newValue Boolean indicating whether to enable or disable the wallet limit.
+     */
+    function enableDisableWalletLimit(bool newValue) external onlyOwner {
+       checkWalletLimit = newValue;
+       emit WalletLimitEnabled(newValue);
+    }
+
+    /**
+     * @dev Sets the wallet limit exemption status for a holder.
+     * @param holder The address to set exemption status.
+     * @param exempt The boolean value indicating exemption.
+     */
+    function setIsWalletLimitExempt(address holder, bool exempt) external onlyOwner {
+        isWalletLimitExempt[holder] = exempt;
+        emit WalletLimitExemptStatusUpdated(holder, exempt);
+    }
+
+    /**
+     * @dev Sets the maximum number of tokens a wallet can hold.
+     * @param newLimit New wallet limit.
+     */
+    function setWalletLimit(uint256 newLimit) external onlyOwner {
+        require(newLimit >= minWalletLimit, "KooInu: Wallet limit too low");
+        require(newLimit <= maxWalleTlimiT, "KooInu: Wallet limit too high");
+        _walletMax  = newLimit;
+        emit WalletLimitUpdated(newLimit);
+    }
+
+    /**
+     * @dev Sets the minimum number of tokens before a swap is triggered.
+     * @param newLimit New minimum token threshold for swapping.
+     */
+    function setNumTokensBeforeSwap(uint256 newLimit) external onlyOwner {
+        minimumTokensBeforeSwap = newLimit;
+        emit NumTokensBeforeSwapUpdated(newLimit);
+    }
+
+    /**
+     * @dev Enables or disables the swap and liquify feature.
+     * @param _enabled Boolean indicating whether to enable or disable swap and liquify.
+     */
+    function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
+        swapAndLiquifyEnabled = _enabled;
+        emit SwapAndLiquifyEnabledUpdated(_enabled);
+    }
+
+    /**
+     * @dev Sets whether swap and liquify should occur only when the threshold is reached.
+     * @param newValue Boolean indicating the swap and liquify condition.
+     */
+    function setSwapAndLiquifyByLimitOnly(bool newValue) public onlyOwner {
+        swapAndLiquifyByLimitOnly = newValue;
+        emit SwapAndLiquifyByLimitOnlyUpdated(newValue);
+    }
+        
+    /**
+     * @dev Returns the circulating supply (total supply minus the balance of the dead address).
+     */
+    function getCirculatingSupply() public view returns (uint256) {
+        return _totalSupply - balanceOf(deadAddress);
+    }
+
+    // ----------------- Withdrawal Functions -----------------
+
+    /**
+     * @dev Transfers Ether to a specified address.
+     * @param recipient The address to receive Ether.
+     * @param amount The amount of Ether to transfer in wei.
+     */
+    function transferToAddressETH(address payable recipient, uint256 amount) private {
+        Address.sendValue(recipient, amount);
+    }
+
+
+     // Function to receive ETH from UniswapV2Router when swapping
+    receive() external payable {}
+        
+    /**
      * @dev Transfers tokens to a specified address.
+     * @param recipient The address to receive tokens.
+     * @param amount The amount of tokens to transfer.
      */
     function transfer(address recipient, uint256 amount) public override returns (bool) {
         _transfer(_msgSender(), recipient, amount);
@@ -531,34 +906,40 @@ constructor () ReentrancyGuard() {
 
     /**
      * @dev Transfers tokens from one address to another using the allowance mechanism.
+     * @param sender The address sending tokens.
+     * @param recipient The address receiving tokens.
+     * @param amount The amount of tokens to transfer.
      */
     function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
-        require(_allowances[sender][_msgSender()] >= amount, "KOO: transfer amount exceeds allowance");
         _transfer(sender, recipient, amount);
         // Decrease the allowance accordingly
+        require(_allowances[sender][_msgSender()] >= amount, "KooInu: transfer amount exceeds allowance");
         _approve(sender, _msgSender(), _allowances[sender][_msgSender()] - amount);
         return true;
     }
 
     // ----------------- Internal Transfer Function -----------------
-    
+
     /**
      * @dev Internal function to handle transfers, including fee logic and swap & liquify.
+     * @param sender The address sending tokens.
+     * @param recipient The address receiving tokens.
+     * @param amount The amount of tokens to transfer.
      */
     function _transfer(address sender, address recipient, uint256 amount) private nonReentrant returns (bool) {
 
-        require(sender != address(0), "KOO: transfer from zero address"); // Prevent transfer from zero address
-        require(recipient != address(0), "KOO: transfer to zero address"); // Prevent transfer to zero address
+        require(sender != address(0), "KooInu: transfer from zero address"); // Prevent transfer from zero address
+        require(recipient != address(0), "KooInu: transfer to zero address"); // Prevent transfer to zero address
 
         if(inSwapAndLiquify) { 
             return _basicTransfer(sender, recipient, amount); // If already in swap and liquify, perform a basic transfer
         }
         else {
             if(!isTxLimitExempt[sender] && !isTxLimitExempt[recipient]) {
-                require(amount <= _maxTxAmount, "KOO: exceeds maxTxAmount."); // Enforce max transaction limit
+                require(amount <= _maxTxAmount, "KooInu: exceeds maxTxAmount."); // Enforce max transaction limit
             }            
 
-            uint256 contractTokenBalance = _balances[address(this)]; // Get the contract's token balance
+            uint256 contractTokenBalance = balanceOf(address(this)); // Get the contract's token balance
             bool overMinimumTokenBalance = contractTokenBalance >= minimumTokensBeforeSwap;
                 
             // Check if conditions are met to perform swap and liquify
@@ -566,25 +947,23 @@ constructor () ReentrancyGuard() {
             {
                 if(swapAndLiquifyByLimitOnly)
                     contractTokenBalance = minimumTokensBeforeSwap; // Use minimum tokens if swap by limit only
-                else if(contractTokenBalance > maxSwapAmount)
-                    contractTokenBalance = maxSwapAmount; // Limit the swap to prevent high slippage
-
                 swapAndLiquify(contractTokenBalance); // Perform swap and liquify
             }
 
             // Subtract the amount from the sender's balance
-            _balances[sender] -= amount;
+            _balances[sender] = _balances[sender] - amount;
 
             // Calculate the final amount after deducting fees if applicable
             uint256 finalAmount = (isExcludedFromFee[sender] || isExcludedFromFee[recipient]) ? 
                                          amount : takeFee(sender, recipient, amount);
 
             // Check wallet limit if applicable
-            if(checkWalletLimit && !isWalletLimitExempt[recipient])
-                require(_balances[recipient] + finalAmount <= _walletMax, "KOO: exceeds max wallet limit");
+            uint256 walletMax = _walletMax;
+            require(balanceOf(recipient) + finalAmount <= walletMax, "KooInu: exceeds max wallet limit");
+
 
             // Add the final amount to the recipient's balance
-            _balances[recipient] += finalAmount;
+            _balances[recipient] = _balances[recipient] + finalAmount;
 
             emit Transfer(sender, recipient, finalAmount); // Emit the transfer event
             return true;
@@ -593,96 +972,62 @@ constructor () ReentrancyGuard() {
 
     /**
      * @dev Performs a basic transfer without taking any fees.
+     * @param sender The address sending tokens.
+     * @param recipient The address receiving tokens.
+     * @param amount The amount of tokens to transfer.
      */
     function _basicTransfer(address sender, address recipient, uint256 amount) internal returns (bool) {
-        _balances[sender] -= amount; // Subtract from sender
-        _balances[recipient] += amount; // Add to recipient
+        _balances[sender] = _balances[sender] - amount; // Subtract from sender
+        _balances[recipient] = _balances[recipient] + amount; // Add to recipient
         emit Transfer(sender, recipient, amount); // Emit transfer event
         return true;
     }
 
     /**
-     * @dev Takes fee on transactions based on whether it's a buy or sell.
-     */
-    function takeFee(address sender, address recipient, uint256 amount) internal returns (uint256) {
-        uint256 feeAmount = 0;
-            
-        if(isMarketPair[sender]) {
-            feeAmount = amount * _totalTaxIfBuyingBP / 10000; // Calculate buy fee
-        }
-        else if(isMarketPair[recipient]) {
-            feeAmount = amount * _totalTaxIfSellingBP / 10000; // Calculate sell fee
-        }
-            
-        if(feeAmount > 0) {
-            _balances[address(this)] += feeAmount; // Add fee to contract balance
-            emit Transfer(sender, address(this), feeAmount); // Emit transfer event for fee
-        }
-
-        return amount - feeAmount; // Return the amount after fee deduction
-    }
-
-    // ----------------- Swap and Liquify Functions -----------------
-    
-    /**
-     * @dev Handles swapping tokens for ETH and adding liquidity, including buyback functionality.
+     * @dev Handles swapping tokens for ETH and adding liquidity.
+     * @param tAmount The amount of tokens to swap and liquify.
      */
     function swapAndLiquify(uint256 tAmount) private lockTheSwap {
-        uint256 totalDistributionSharesBP = _totalDistributionSharesBP;
-        uint256 liquidityShareBP = _liquidityShareBP;
-        uint256 marketingShareBP = _marketingShareBP;
-        uint256 teamShareBP = _teamShareBP;
-        uint256 buybackShareBP = _buybackShareBP;
-
         // Calculate tokens for liquidity
-        uint256 tokensForLP = tAmount * liquidityShareBP / totalDistributionSharesBP / 2;
+        uint256 tokensForLP = (tAmount * _liquidityShareBP) / _totalDistributionSharesBP / 2;
         uint256 tokensForSwap = tAmount - tokensForLP; // Remaining tokens to swap
 
-        uint256 initialBalance = address(this).balance;
+        swapTokensForEth(tokensForSwap); // Swap tokens for ETH
+        uint256 amountReceived = address(this).balance; // Get the ETH received from swap
 
-        swapTokensForEth(tokensForSwap);
-
-        uint256 amountReceived = address(this).balance - initialBalance; // Get the ETH received from swap
-
-        uint256 totalBNBFee = (liquidityShareBP / 2) + marketingShareBP + teamShareBP + buybackShareBP;
+        uint256 totalBNBFee = _totalDistributionSharesBP - (_liquidityShareBP / 2);
             
-        // Calculate amounts for liquidity, team, marketing, and buyback
-        uint256 amountBNBLiquidity = (amountReceived * (liquidityShareBP / 2)) / totalBNBFee;
-        uint256 amountBNBTeam = (amountReceived * teamShareBP) / totalBNBFee;
-        uint256 amountBNBMarketing = (amountReceived * marketingShareBP) / totalBNBFee;
-        uint256 amountBNBBuyback = (amountReceived * buybackShareBP) / totalBNBFee;
+        // Calculate amounts for liquidity, team, and marketing
+        uint256 amountBNBLiquidity = (amountReceived * _liquidityShareBP) / totalBNBFee / 2;
+        uint256 amountBNBTeam = (amountReceived * _teamShareBP) / totalBNBFee;
+        uint256 amountBNBMarketing = amountReceived - amountBNBLiquidity - amountBNBTeam;
 
         if(amountBNBMarketing > 0)
-            marketingWalletAddress.sendValue(amountBNBMarketing); // Transfer to marketing wallet
+            transferToAddressETH(marketingWalletAddress, amountBNBMarketing); // Transfer to marketing wallet
 
         if(amountBNBTeam > 0)
-            teamWalletAddress.sendValue(amountBNBTeam); // Transfer to team wallet
+            transferToAddressETH(teamWalletAddress, amountBNBTeam); // Transfer to team wallet
 
         if(amountBNBLiquidity > 0 && tokensForLP > 0)
             addLiquidity(tokensForLP, amountBNBLiquidity); // Add liquidity to Uniswap
-
-        if(amountBNBBuyback > 0)
-            buyBackTokens(amountBNBBuyback); // Perform buyback and burn
     }
         
     /**
      * @dev Swaps a specified amount of tokens for ETH using Uniswap.
+     * @param tokenAmount The amount of tokens to swap.
      */
     function swapTokensForEth(uint256 tokenAmount) private {
+        // Generate the Uniswap pair path of token -> WETH
         address[] memory path = new address[](2);
         path[0] = address(this);
         path[1] = uniswapV2Router.WETH();
 
         _approve(address(this), address(uniswapV2Router), tokenAmount); // Approve the router to spend tokens
 
-        // Get expected ETH amount to set as amountOutMin for slippage protection
-        uint256[] memory amountsOut = uniswapV2Router.getAmountsOut(tokenAmount, path);
-        uint256 amountOutMin = (amountsOut[1] * 95) / 100; // Accept at least 95% of expected ETH
-
         // Make the swap
         uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             tokenAmount,
-            amountOutMin, // Slippage protection
+            0, // Accept any amount of ETH
             path,
             address(this), // The contract
             block.timestamp
@@ -691,35 +1036,13 @@ constructor () ReentrancyGuard() {
         emit SwapTokensForETH(tokenAmount, path); // Emit event after swap
     }
 
-    /**
-     * @dev Swaps ETH for tokens and burns them (buyback).
-     */
-    function buyBackTokens(uint256 amount) private lockTheSwap {
-        if(amount > 0){
-            address[] memory path = new address[](2);
-            path[0] = uniswapV2Router.WETH();
-            path[1] = address(this);
-
-            // Get expected token amount to set as amountOutMin for slippage protection
-            uint256[] memory amountsOut = uniswapV2Router.getAmountsOut(amount, path);
-            uint256 amountOutMin = (amountsOut[1] * 95) / 100; // Accept at least 95% of expected tokens
-
-            // Execute the swap
-            uniswapV2Router.swapExactETHForTokensSupportingFeeOnTransferTokens{value: amount}(
-                amountOutMin, // Slippage protection
-                path,
-                deadAddress, // Send tokens to dead address (burn)
-                block.timestamp
-            );
-
-            emit SwapETHForTokens(amount, path);
-        }
-    }
 
     /**
      * @dev Adds liquidity to Uniswap using the specified token and ETH amounts.
+     * @param tokenAmount The amount of tokens to add to liquidity.
+     * @param ethAmount The amount of ETH to add to liquidity.
      */
-    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
+    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private nonReentrant {
         _approve(address(this), address(uniswapV2Router), tokenAmount); // Approve token transfer to the router
 
         // Add the liquidity
@@ -731,572 +1054,118 @@ constructor () ReentrancyGuard() {
             owner(),
             block.timestamp
         );
-
-        emit SwapAndLiquify(tokenAmount, ethAmount, tokenAmount);
-    }
-
-    // Function to receive ETH from UniswapV2Router when swapping
-    receive() external payable {}
-
-    // ----------------- Administrative Functions -----------------
-    
-    /**
-     * @dev Sets the market pair status for a specific account.
-     */
-    function setMarketPairStatus(address account, bool newValue) public onlyOwner {
-        isMarketPair[account] = newValue;
-        emit MarketPairStatusUpdated(account, newValue);
     }
 
     /**
-     * @dev Sets the transaction limit exemption status for a holder.
+     * @dev Takes fee on transactions based on whether it's a buy or sell.
+     * @param sender The address sending tokens.
+     * @param recipient The address receiving tokens.
+     * @param amount The amount of tokens to transfer.
+     * @return The amount after deducting fees.
      */
-    function setIsTxLimitExempt(address holder, bool exempt) external onlyOwner {
-        isTxLimitExempt[holder] = exempt;
-        emit TxLimitExemptStatusUpdated(holder, exempt);
+    function takeFee(address sender, address recipient, uint256 amount) internal returns (uint256) {
+        uint256 feeAmount = 0;
+            
+        bool isBuy = isMarketPair[sender];
+        bool isSell = isMarketPair[recipient];
+
+        if(isBuy || isSell) {
+            uint256 totalTaxBP = isBuy ? _totalTaxIfBuyingBP : _totalTaxIfSellingBP;
+            feeAmount = (amount * totalTaxBP) / 10000;
+        }
+
+            
+        if(feeAmount > 0) {
+            _balances[address(this)] += feeAmount; // Add fee to contract balance
+            emit Transfer(sender, address(this), feeAmount); // Emit transfer event for fee
+        }
+
+        return amount - feeAmount; // Return the amount after fee deduction
     }
         
-    /**
-     * @dev Sets the fee exemption status for a specific account.
-     */
-    function setIsExcludedFromFee(address account, bool newValue) public onlyOwner {
-        isExcludedFromFee[account] = newValue;
-        emit FeeExemptionStatusUpdated(account, newValue);
-    }
-
-    /**
-     * @dev Sets the buy taxes: liquidity, marketing, team, and buyback fees.
-     * Can only be called via governance proposals.
-     */
-    function setBuyTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP, uint256 newBuybackFeeBP) external {
-        require(msg.sender == address(this), "KOO: Only via governance");
-        require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Liquidity fee too high");
-        require(newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Marketing fee too high");
-        require(newTeamFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Team fee too high");
-        require(newBuybackFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Buyback fee too high");
-
-        uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP + newBuybackFeeBP;
-        require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KOO: Total fee too high");
-
-        _buyLiquidityFeeBP = newLiquidityFeeBP;
-        _buyMarketingFeeBP = newMarketingFeeBP;
-        _buyTeamFeeBP = newTeamFeeBP;
-        _buyBuybackFeeBP = newBuybackFeeBP;
-
-        _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP + _buyBuybackFeeBP;
-
-        emit BuyTaxesUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP, newBuybackFeeBP);
-    }
-
-    /**
-     * @dev Sets the sell taxes: liquidity, marketing, team, and buyback fees.
-     * Can only be called via governance proposals.
-     */
-    function setSellTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP, uint256 newBuybackFeeBP) external {
-        require(msg.sender == address(this), "KOO: Only via governance");
-        require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Liquidity fee too high");
-        require(newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Marketing fee too high");
-        require(newTeamFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Team fee too high");
-        require(newBuybackFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KOO: Buyback fee too high");
-
-        uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP + newBuybackFeeBP;
-        require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KOO: Total fee too high");
-
-        _sellLiquidityFeeBP = newLiquidityFeeBP;
-        _sellMarketingFeeBP = newMarketingFeeBP;
-        _sellTeamFeeBP = newTeamFeeBP;
-        _sellBuybackFeeBP = newBuybackFeeBP;
-
-        _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP + _sellBuybackFeeBP;
-
-        emit SellTaxesUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP, newBuybackFeeBP);
-    }
-        
-    /**
-     * @dev Sets the distribution shares for liquidity, marketing, team, and buyback.
-     * Can only be called via governance proposals.
-     */
-    function setDistributionSettings(uint256 newLiquidityShareBP, uint256 newMarketingShareBP, uint256 newTeamShareBP, uint256 newBuybackShareBP) external {
-        require(msg.sender == address(this), "KOO: Only via governance");
-
-        _liquidityShareBP = newLiquidityShareBP;
-        _marketingShareBP = newMarketingShareBP;
-        _teamShareBP = newTeamShareBP;
-        _buybackShareBP = newBuybackShareBP;
-
-        _totalDistributionSharesBP = _liquidityShareBP + _marketingShareBP + _teamShareBP + _buybackShareBP;
-
-        emit DistributionSettingsUpdated(newLiquidityShareBP, newMarketingShareBP, newTeamShareBP, newBuybackShareBP);
-    }
-        
-    /**
-     * @dev Sets the maximum transaction amount.
-     */
-    function setMaxTxAmount(uint256 maxTxAmount) external onlyOwner {
-        require(maxTxAmount >= minTxAmount, "KOO: Max tx amount too low");
-        require(maxTxAmount <= maxTxAmountCap, "KOO: Max tx amount too high");
-        _maxTxAmount = maxTxAmount;
-        emit MaxTxAmountUpdated(maxTxAmount);
-    }
-
-    /**
-     * @dev Enables or disables the wallet limit.
-     */
-    function enableDisableWalletLimit(bool newValue) external onlyOwner {
-       checkWalletLimit = newValue;
-       emit WalletLimitEnabled(newValue);
-    }
-
-    /**
-     * @dev Sets the wallet limit exemption status for a holder.
-     */
-    function setIsWalletLimitExempt(address holder, bool exempt) external onlyOwner {
-        isWalletLimitExempt[holder] = exempt;
-        emit WalletLimitExemptStatusUpdated(holder, exempt);
-    }
-
-    /**
-     * @dev Sets the maximum number of tokens a wallet can hold.
-     */
-    function setWalletLimit(uint256 newLimit) external onlyOwner {
-        require(newLimit >= minWalletLimit, "KOO: Wallet limit too low");
-        require(newLimit <= maxWalletLimit, "KOO: Wallet limit too high");
-        _walletMax  = newLimit;
-        emit WalletLimitUpdated(newLimit);
-    }
-
-    /**
-     * @dev Sets the minimum number of tokens before a swap is triggered.
-     */
-    function setNumTokensBeforeSwap(uint256 newLimit) external onlyOwner {
-        minimumTokensBeforeSwap = newLimit;
-        emit NumTokensBeforeSwapUpdated(newLimit);
-    }
-
-    /**
-     * @dev Enables or disables the swap and liquify feature.
-     */
-    function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
-        swapAndLiquifyEnabled = _enabled;
-        emit SwapAndLiquifyEnabledUpdated(_enabled);
-    }
-
-    /**
-     * @dev Sets whether swap and liquify should occur only when the threshold is reached.
-     */
-    function setSwapAndLiquifyByLimitOnly(bool newValue) public onlyOwner {
-        swapAndLiquifyByLimitOnly = newValue;
-        emit SwapAndLiquifyByLimitOnlyUpdated(newValue);
-    }
-        
-    /**
-     * @dev Returns the circulating supply (total supply minus the balance of the dead address).
-     */
-    function getCirculatingSupply() public view returns (uint256) {
-        return _totalSupply - _balances[deadAddress];
-    }
-
     // ----------------- Withdrawal Functions -----------------
-    
+
     /**
      * @dev Withdraws Ether from the contract to the owner's address.
+     * @param amount The amount of Ether to withdraw in wei.
      */
     function withdrawEther(uint256 amount) external onlyOwner nonReentrant {
-        uint256 contractBalance = address(this).balance;
-        require(contractBalance >= amount, "KOO: Insufficient Ether");
-        payable(owner()).sendValue(amount);
+        require(address(this).balance >= amount, "KooInu: Insufficient Ether balance");
+        payable(owner()).transfer(amount);
         emit EtherWithdrawn(owner(), amount);
     }
 
+
     /**
      * @dev Withdraws ERC20 tokens mistakenly sent to the contract.
+     * @param tokenAddress The address of the ERC20 token to withdraw.
+     * @param tokenAmount The amount of tokens to withdraw.
      */
     function withdrawERC20(address tokenAddress, uint256 tokenAmount) external onlyOwner nonReentrant {
-        require(tokenAddress != address(this), "KOO: Cannot withdraw own tokens");
+        require(tokenAddress != address(this), "KooInu: Cannot withdraw own tokens");
         IERC20(tokenAddress).transfer(owner(), tokenAmount);
         emit ERC20Withdrawn(owner(), tokenAddress, tokenAmount);
     }
 
-    // ----------------- Staking Functions -----------------
+    // ----------------- Event Declarations for Enhanced Access Control Transparency -----------------
     
     /**
-     * @dev Allows a user to stake a specific amount of KOO tokens.
+     * @dev Emitted when the market pair status of an account is updated.
      */
-    function stake(uint256 amount) external nonReentrant {
-        require(stakingStartTime > 0, "KOO: Staking not started");
-        require(block.timestamp >= stakingStartTime, "KOO: Staking not yet started");
-        require(amount > 0, "KOO: Cannot stake zero");
-        require(_balances[msg.sender] >= amount, "KOO: Insufficient balance");
-
-        // Update rewards before staking
-        _updateRewards(msg.sender);
-
-        // State changes before external interactions
-        _balances[msg.sender] -= amount;
-        _balances[address(this)] += amount;
-        StakeInfo storage userStake = stakes[msg.sender];
-        userStake.amount += amount;
-        userStake.lastStakeTime = block.timestamp;
-        totalStaked += amount;
-
-        emit Staked(msg.sender, amount);
-        emit Transfer(msg.sender, address(this), amount);
-    }
-
+    event MarketPairStatusUpdated(address indexed account, bool newValue);
 
     /**
-     * @dev Allows a user to unstake a specific amount of KOO tokens.
+     * @dev Emitted when the transaction limit exemption status of a holder is updated.
      */
-    function unstake(uint256 amount) external nonReentrant {
-        require(amount > 0, "KOO: Cannot unstake zero");
-        StakeInfo storage userStake = stakes[msg.sender];
-        require(userStake.amount >= amount, "KOO: Insufficient staked");
-
-        // Update rewards before unstaking
-        _updateRewards(msg.sender);
-
-        // State changes before external interactions
-        userStake.amount -= amount;
-        userStake.lastStakeTime = block.timestamp;
-        totalStaked -= amount;
-
-        // Transfer tokens back to user
-        _balances[address(this)] -= amount;
-        _balances[msg.sender] += amount;
-        emit Transfer(address(this), msg.sender, amount);
-
-        emit Unstaked(msg.sender, amount);
-    }
+    event TxLimitExemptStatusUpdated(address indexed holder, bool exempt);
 
     /**
-     * @dev Allows a user to claim their staking rewards.
+     * @dev Emitted when the fee exemption status of an account is updated.
      */
-    function claimRewards() external nonReentrant {
-        _updateRewards(msg.sender);
-        StakeInfo storage userStake = stakes[msg.sender];
-        uint256 reward = userStake.rewardDebt;
-        require(reward > 0, "KOO: No rewards");
-        require(stakingRewardPool >= reward, "KOO: Not enough rewards");
-        require(totalRewardsDistributed + reward <= maxTotalRewards, "KOO: Reward cap reached");
-
-        // Reset reward debt before external interactions
-        userStake.rewardDebt = 0;
-        stakingRewardPool -= reward;
-        totalRewardsDistributed += reward;
-
-        // Transfer rewards to user
-        _balances[address(this)] -= reward;
-        _balances[msg.sender] += reward;
-        emit Transfer(address(this), msg.sender, reward);
-
-        emit RewardClaimed(msg.sender, reward);
-    }
+    event FeeExemptionStatusUpdated(address indexed account, bool newValue);
 
     /**
-     * @dev Internal function to update the staking rewards for a user.
+     * @dev Emitted when the buy taxes are updated.
      */
-    function _updateRewards(address user) internal {
-        StakeInfo storage userStake = stakes[user];
-        if(userStake.amount > 0){
-            uint256 stakingDuration = block.timestamp - userStake.lastStakeTime;
-            uint256 reward = (userStake.amount * rewardRatePerSecond * stakingDuration) / 1e18;
-            userStake.rewardDebt += reward;
-            userStake.lastStakeTime = block.timestamp;
-        }
-    }
-
-    // ----------------- Governance Functions -----------------
-    
-    /**
-     * @dev Adds a new signer. Only callable by the owner.
-     */
-    function addSigner(address newSigner) external onlyOwner {
-        require(newSigner != address(0), "KOO: Zero address");
-        require(!isSigner[newSigner], "KOO: Already a signer");
-        isSigner[newSigner] = true;
-        signers.push(newSigner);
-        emit SignerAdded(newSigner);
-    }
+    event BuyTaxesUpdated(uint256 liquidityFeeBP, uint256 marketingFeeBP, uint256 teamFeeBP);
 
     /**
-     * @dev Removes an existing signer. Only callable by the owner.
+     * @dev Emitted when the sell taxes are updated.
      */
-    function removeSigner(address signer) external onlyOwner {
-        require(isSigner[signer], "KOO: Not a signer");
-        isSigner[signer] = false;
-
-        // Remove signer from the signers array
-        uint256 len = signers.length;
-        for(uint256 i = 0; i < len; ++i) {
-            if(signers[i] == signer){
-                signers[i] = signers[len - 1];
-                signers.pop();
-                break;
-            }
-        }
-
-        emit SignerRemoved(signer);
-    }
+    event SellTaxesUpdated(uint256 liquidityFeeBP, uint256 marketingFeeBP, uint256 teamFeeBP);
 
     /**
-     * @dev Proposes a change to the reward rate or fees. Requires multi-signature approval and a time lock.
+     * @dev Emitted when the distribution shares are updated.
      */
-    function proposeChange(ProposalType proposalType, uint256 newValue) external onlySigner {
-        require(newValue > 0, "KOO: New value zero");
-        if(proposalType == ProposalType.RewardRateChange) {
-            require(newValue <= MAX_REWARD_RATE, "KOO: Reward rate too high");
-        } else if(proposalType == ProposalType.FeeChange) {
-            require(newValue <= MAX_TOTAL_FEE_BP, "KOO: Fee too high");
-        }
-
-        proposalCount++;
-        Proposal storage newProposal = proposals[proposalCount];
-        newProposal.id = proposalCount;
-        newProposal.proposalType = proposalType;
-        newProposal.proposer = msg.sender;
-        newProposal.newValue = newValue;
-        newProposal.proposedTime = block.timestamp;
-        newProposal.executeTime = block.timestamp + GOVERNANCE_DELAY;
-        newProposal.expiryTime = block.timestamp + PROPOSAL_EXPIRY_PERIOD;
-        newProposal.approvalCount = 0;
-        newProposal.executed = false;
-
-        emit ProposalCreated(proposalCount, proposalType, msg.sender, newValue, newProposal.executeTime, newProposal.expiryTime);
-    }
+    event DistributionSettingsUpdated(uint256 liquidityShareBP, uint256 marketingShareBP, uint256 teamShareBP);
 
     /**
-     * @dev Approves a proposal. Only signers can approve.
+     * @dev Emitted when the maximum transaction amount is updated.
      */
-    function approveProposal(uint256 proposalId) external onlySigner {
-        Proposal storage proposal = proposals[proposalId];
-        require(proposal.id != 0, "KOO: Proposal not exist");
-        require(!proposal.executed, "KOO: Proposal executed");
-        require(!proposalApprovals[proposalId][msg.sender], "KOO: Already approved");
-        require(block.timestamp <= proposal.expiryTime, "KOO: Proposal expired");
-
-        proposalApprovals[proposalId][msg.sender] = true;
-        proposal.approvalCount += 1;
-
-        emit ProposalApproved(proposalId, msg.sender);
-
-        // If approval count reaches minimum signatures and delay passed, execute the proposal
-        if(proposal.approvalCount >= MIN_SIGNATURES && block.timestamp >= proposal.executeTime) {
-            executeProposal(proposalId);
-        }
-    }
+    event MaxTxAmountUpdated(uint256 maxTxAmount);
 
     /**
-     * @dev Revokes an approval for a proposal. Only signers can revoke.
+     * @dev Emitted when the wallet limit is enabled or disabled.
      */
-    function revokeApproval(uint256 proposalId) external onlySigner {
-        Proposal storage proposal = proposals[proposalId];
-        require(proposal.id != 0, "KOO: Proposal not exist");
-        require(!proposal.executed, "KOO: Proposal executed");
-        require(proposalApprovals[proposalId][msg.sender], "KOO: Approval not found");
-
-        proposalApprovals[proposalId][msg.sender] = false;
-        proposal.approvalCount -= 1;
-
-        emit ProposalRevoked(proposalId, msg.sender);
-    }
+    event WalletLimitEnabled(bool enabled);
 
     /**
-     * @dev Executes a proposal after the time lock and sufficient approvals.
+     * @dev Emitted when the wallet limit exemption status of a holder is updated.
      */
-    function executeProposal(uint256 proposalId) public nonReentrant onlySigner {
-        Proposal storage proposal = proposals[proposalId];
-        require(proposal.id != 0, "KOO: Proposal not exist");
-        require(!proposal.executed, "KOO: Proposal executed");
-        require(proposal.approvalCount >= MIN_SIGNATURES, "KOO: Not enough approvals");
-        require(block.timestamp >= proposal.executeTime, "KOO: Delay not passed");
-        require(block.timestamp <= proposal.expiryTime, "KOO: Proposal expired");
-
-        // Apply the proposed change based on proposal type
-        if(proposal.proposalType == ProposalType.RewardRateChange) {
-            // Calculate the new rewardRatePerSecond based on the annual rate
-            uint256 annualRate = proposal.newValue; // e.g., 10 for 10%
-            uint256 secondsInYear = 31536000; // Number of seconds in a year
-            rewardRatePerSecond = (annualRate * 1e18) / secondsInYear;
-        } else if(proposal.proposalType == ProposalType.FeeChange) {
-            // To prevent multiple function calls via governance, set buy and sell taxes directly
-            // Note: This approach assumes that newValue is structured appropriately
-            // For more granular control, consider passing separate values or modifying the proposal structure
-
-            // Example: Setting all buy and sell fees to newValue
-            _buyLiquidityFeeBP = proposal.newValue;
-            _buyMarketingFeeBP = proposal.newValue;
-            _buyTeamFeeBP = proposal.newValue;
-            _buyBuybackFeeBP = proposal.newValue;
-
-            _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP + _buyBuybackFeeBP;
-
-            _sellLiquidityFeeBP = proposal.newValue;
-            _sellMarketingFeeBP = proposal.newValue;
-            _sellTeamFeeBP = proposal.newValue;
-            _sellBuybackFeeBP = proposal.newValue;
-
-            _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP + _sellBuybackFeeBP;
-
-            emit BuyTaxesUpdated(_buyLiquidityFeeBP, _buyMarketingFeeBP, _buyTeamFeeBP, _buyBuybackFeeBP);
-            emit SellTaxesUpdated(_sellLiquidityFeeBP, _sellMarketingFeeBP, _sellTeamFeeBP, _sellBuybackFeeBP);
-        }
-
-        proposal.executed = true;
-
-        emit ProposalExecuted(proposalId, proposal.newValue);
-    }
+    event WalletLimitExemptStatusUpdated(address indexed holder, bool exempt);
 
     /**
-     * @dev Modifier to restrict access to only authorized signers.
+     * @dev Emitted when the wallet limit is updated.
      */
-    modifier onlySigner() {
-        require(isSigner[msg.sender], "KOO: Caller not signer");
-        _;
-    }
-
-    // ----------------- Additional Administrative Functions -----------------
-    
-    /**
-     * @dev Allows the owner to set the marketing wallet address.
-     */
-    function setMarketingWalletAddress(address payable newMarketingWallet) external onlyOwner {
-        require(newMarketingWallet != address(0), "KOO: Zero address");
-        marketingWalletAddress = newMarketingWallet;
-        emit MarketingWalletUpdated(newMarketingWallet);
-    }
+    event WalletLimitUpdated(uint256 newLimit);
 
     /**
-     * @dev Allows the owner to set the team wallet address.
+     * @dev Emitted when the number of tokens before swap is updated.
      */
-    function setTeamWalletAddress(address payable newTeamWallet) external onlyOwner {
-        require(newTeamWallet != address(0), "KOO: Zero address");
-        teamWalletAddress = newTeamWallet;
-        emit TeamWalletUpdated(newTeamWallet);
-    }
+    event NumTokensBeforeSwapUpdated(uint256 newLimit);
 
     /**
-     * @dev Allows the owner to set the staking start time.
+     * @dev Emitted when swap and liquify by limit only is updated.
      */
-    function setStakingStartTime(uint256 timestamp) external onlyOwner {
-        stakingStartTime = timestamp;
-        emit StakingStartTimeUpdated(timestamp);
-    }
-
-    // ----------------- Events for Additional Administrative Functions -----------------
-    
-    /**
-     * @dev Emitted when the marketing wallet address is updated.
-     */
-    event MarketingWalletUpdated(address newMarketingWallet);
-
-    /**
-     * @dev Emitted when the team wallet address is updated.
-     */
-    event TeamWalletUpdated(address newTeamWallet);
-
-    /**
-     * @dev Emitted when the staking start time is updated.
-     */
-    event StakingStartTimeUpdated(uint256 newTimestamp);
-
-    // ----------------- Governance Helper Functions -----------------
-    
-    /**
-     * @dev Returns the list of current signers.
-     */
-    function getSigners() external view returns (address[] memory) {
-        return signers;
-    }
-
-    /**
-     * @dev Returns the details of a specific proposal.
-     */
-    function getProposal(uint256 proposalId) external view returns (
-        uint256 id,
-        ProposalType proposalType,
-        address proposer,
-        uint256 newValue,
-        uint256 proposedTime,
-        uint256 executeTime,
-        uint256 expiryTime,
-        uint256 approvalCount,
-        bool executed
-    ) {
-        Proposal storage proposal = proposals[proposalId];
-        return (
-            proposal.id,
-            proposal.proposalType,
-            proposal.proposer,
-            proposal.newValue,
-            proposal.proposedTime,
-            proposal.executeTime,
-            proposal.expiryTime,
-            proposal.approvalCount,
-            proposal.executed
-        );
-    }
-
-    /**
-     * @dev Checks if a signer has approved a specific proposal.
-     */
-    function hasApproved(uint256 proposalId, address signer) external view returns (bool approved) {
-        return proposalApprovals[proposalId][signer];
-    }
-
-    /**
-     * @dev Returns the list of signers who have approved a specific proposal.
-     */
-    function getProposalApprovals(uint256 proposalId) external view returns (address[] memory approvedSigners) {
-        uint256 count = 0;
-        uint256 len = signers.length;
-        for (uint256 i = 0; i < len; ++i) {
-            if (proposalApprovals[proposalId][signers[i]]) {
-                count++;
-            }
-        }
-
-        approvedSigners = new address[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < len; ++i) {
-            if (proposalApprovals[proposalId][signers[i]]) {
-                approvedSigners[index] = signers[i];
-                index++;
-            }
-        }
-    }
-
-    // ----------------- Complete Administrative Functions -----------------
-    
-    /**
-     * @dev Allows the owner to exclude multiple accounts from fees.
-     */
-    function excludeFromFeeMultiple(address[] calldata accounts, bool status) external onlyOwner {
-        uint256 len = accounts.length;
-        for(uint256 i = 0; i < len; ++i) {
-            isExcludedFromFee[accounts[i]] = status;
-            emit FeeExemptionStatusUpdated(accounts[i], status);
-        }
-    }
-
-    /**
-     * @dev Allows the owner to set multiple market pairs.
-     */
-    function setMarketPairs(address[] calldata accounts, bool status) external onlyOwner {
-        uint256 len = accounts.length;
-        for(uint256 i = 0; i < len; ++i) {
-            isMarketPair[accounts[i]] = status;
-            emit MarketPairStatusUpdated(accounts[i], status);
-        }
-    }
-
-    // ----------------- Security Best Practices -----------------
-    
-    /**
-     * @dev Conducts a periodic security review (placeholder function).
-     * This should be implemented with actual audit logic or tools.
-     */
-    function conductSecurityReview() external onlyOwner {
-        // Placeholder for security review logic
-        // In practice, this could trigger an off-chain audit or other security mechanisms
-    }
+    event SwapAndLiquifyByLimitOnlyUpdated(bool newValue);
 }
