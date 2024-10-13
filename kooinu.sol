@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.28;
 
 /**
  * @title KooInu (KOO) Smart Contract
@@ -167,7 +167,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     using Address for address payable;
 
     // ----------------- Token Details -----------------
-    string private constant _name = "KooInu";
+    string private constant _name = "Koo Inu";
     string private constant _symbol = "KOO";
     uint8 private constant _decimals = 9;
 
@@ -211,7 +211,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 public _totalDistributionSharesBP;
 
     // ----------------- Supply and Limits -----------------
-    uint256 private constant _totalSupply = 1000000000000000 * (10 ** _decimals);
+    uint256 private constant _totalSupply = 1000000000000000 * (10 ** _decimals); // One quadrillion tokens
     uint256 public _maxTxAmount = _totalSupply; 
     uint256 public _walletMax = _totalSupply;
     uint256 private minimumTokensBeforeSwap = _totalSupply / 100; // 1% of total supply
@@ -227,8 +227,8 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 public maxWalletLimit = _totalSupply; // Max is total supply
 
     // ----------------- Uniswap Router and Pair -----------------
-    IUniswapV2Router02 public uniswapV2Router;
-    address public uniswapPair;
+    IUniswapV2Router02 public immutable uniswapV2Router;
+    address public immutable uniswapPair;
         
     // Flags for swap and liquify functionality
     bool inSwapAndLiquify;
@@ -342,84 +342,91 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     event ProposalRevoked(uint256 indexed proposalId, address indexed revoker);
     event ProposalExecuted(uint256 indexed proposalId, uint256 newValue);
     
-    // ----------------- Constructor -----------------
     // Declaration of the initial signers array
-    address[] private initialSigners; // Declare the initial signers array    
+    address[] private initialSigners; // Declare the initial signers array     
+    // ----------------- Constructor -----------------
     /**
      * @dev Constructor to initialize the contract with multiple initial signers.
      */
-    constructor () ReentrancyGuard() {
-        // Set the marketing and team wallet addresses
-        marketingWalletAddress = payable(0x7184eAC82c0C3F6bcdFD1c28A508dC4a18120b1e); // Marketing Address
-        teamWalletAddress = payable(0xa26809d31cf0cCd4d11C520F84CE9a6Fc4d4bb75); // Team Address
+constructor () ReentrancyGuard() {
+    // Set the marketing and team wallet addresses
+    marketingWalletAddress = payable(0xf1214dBF1D1285D293604601154327A78580E6A4); // Marketing Address
+    teamWalletAddress = payable(0x3589D4cdB885137DBCA8662A5BD4F39079db8365); // Team Address
             
-        // Initialize Uniswap router with the specified address
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(
-            0x10ED43C718714eb63d5aA57B78B54704E256024E // Example: PancakeSwap Router on BSC
-        ); 
+    // Initialize Uniswap router with the specified address
+    IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(
+        0x10ED43C718714eb63d5aA57B78B54704E256024E // Example: PancakeSwap Router on BSC
+    ); 
 
-        // Create a Uniswap pair for this token
-        uniswapPair = IUniswapV2Factory(_uniswapV2Router.factory())
-            .createPair(address(this), _uniswapV2Router.WETH());
+    // Create a Uniswap pair for this token
+    uniswapPair = IUniswapV2Factory(_uniswapV2Router.factory())
+        .createPair(address(this), _uniswapV2Router.WETH());
 
-        // Set the Uniswap router
-        uniswapV2Router = _uniswapV2Router;
-        // Approve the Uniswap router to spend the total supply of tokens
-        _allowances[address(this)][address(uniswapV2Router)] = _totalSupply;
+    // Set the Uniswap router
+    uniswapV2Router = _uniswapV2Router;
+    // Approve the Uniswap router to spend the total supply of tokens
+    _allowances[address(this)][address(uniswapV2Router)] = _totalSupply;
 
-        // Exclude owner and contract from fee
-        isExcludedFromFee[owner()] = true;
-        isExcludedFromFee[address(this)] = true;
+    // Exclude owner and contract from fee
+    isExcludedFromFee[owner()] = true;
+    isExcludedFromFee[address(this)] = true;
             
-        // Calculate total taxes for buying and selling
-        _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP + _buyBuybackFeeBP;
-        _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP + _sellBuybackFeeBP;
-        _totalDistributionSharesBP = _liquidityShareBP + _marketingShareBP + _teamShareBP + _buybackShareBP;
+    // Calculate total taxes for buying and selling
+    _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP + _buyBuybackFeeBP;
+    _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP + _sellBuybackFeeBP;
+    _totalDistributionSharesBP = _liquidityShareBP + _marketingShareBP + _teamShareBP + _buybackShareBP;
 
-        // Exempt owner, Uniswap pair, and contract from wallet limit
-        isWalletLimitExempt[owner()] = true;
-        isWalletLimitExempt[uniswapPair] = true;
-        isWalletLimitExempt[address(this)] = true;
+    // Exempt owner, Uniswap pair, and contract from wallet limit
+    isWalletLimitExempt[owner()] = true;
+    isWalletLimitExempt[uniswapPair] = true;
+    isWalletLimitExempt[address(this)] = true;
             
-        // Exempt owner and contract from transaction limit
-        isTxLimitExempt[owner()] = true;
-        isTxLimitExempt[address(this)] = true;
+    // Exempt owner and contract from transaction limit
+    isTxLimitExempt[owner()] = true;
+    isTxLimitExempt[address(this)] = true;
 
-        // Mark the Uniswap pair as a market pair
-        isMarketPair[uniswapPair] = true;
+    // Mark the Uniswap pair as a market pair
+    isMarketPair[uniswapPair] = true;
 
-        // Initialize staking reward pool
-        stakingRewardPool = _totalSupply * 10 / 100; // Allocate 10% for staking rewards
-        _balances[address(this)] = stakingRewardPool;
-        emit Transfer(address(0), address(this), stakingRewardPool);
+    // Initialize staking reward pool
+    stakingRewardPool = _totalSupply * 10 / 100; // Allocate 10% for staking rewards
+    _balances[address(this)] = stakingRewardPool;
+    emit Transfer(address(0), address(this), stakingRewardPool);
 
-        uint256 ownerBalance = _totalSupply - stakingRewardPool;
-        _balances[_msgSender()] = ownerBalance;
-        emit Transfer(address(0), _msgSender(), ownerBalance);
+    uint256 ownerBalance = _totalSupply - stakingRewardPool;
+    _balances[_msgSender()] = ownerBalance;
+    emit Transfer(address(0), _msgSender(), ownerBalance);
 
-        maxTotalRewards = stakingRewardPool;
+    maxTotalRewards = stakingRewardPool;
 
-        // Initialize reward rate per second based on an annual rate
-        uint256 annualRate = 10; // 10% annual rate
-        uint256 secondsInYear = 31536000; // Number of seconds in a year
-        rewardRatePerSecond = (annualRate * 1e18) / secondsInYear;
+    // Initialize reward rate per second based on an annual rate
+    uint256 annualRate = 10; // 10% annual rate
+    uint256 secondsInYear = 31536000; // Number of seconds in a year
+    rewardRatePerSecond = (annualRate * 1e18) / secondsInYear;
 
-        // Initialize governance signers with multiple initial signers
-        initialSigners[0] = _msgSender();
-        initialSigners[1] = address(0x5EE2a5C3cf8dFFd634C89b275A0C8C88f68Fc9B9); // Replace with actual addresses
-        initialSigners[2] = address(0x10f7baf7abB2c3238deffab982abAc5e4C6FBb66);
+    // Initialize staking start time to the current block timestamp
+    stakingStartTime = block.timestamp;
 
-        uint256 len = initialSigners.length;
-        for(uint256 i = 0; i < len; ) {
-            address signer = initialSigners[i];
-            require(signer != address(0), "KOO: Zero address cannot be a signer");
-            require(!isSigner[signer], "KOO: Signer already added");
-            isSigner[signer] = true;
-            signers.push(signer);
-            emit SignerAdded(signer);
-            unchecked { i++; }
-        }
+    // Declare and initialize governance signers with multiple initial signers
+    // Initialize governance signers with multiple initial signers
+    initialSigners.push(_msgSender());
+    initialSigners.push(address(0x5EE2a5C3cf8dFFd634C89b275A0C8C88f68Fc9B9));
+    initialSigners.push(address(0x10f7baf7abB2c3238deffab982abAc5e4C6FBb66));
+
+    uint256 len = initialSigners.length;
+    for (uint256 i = 0; i < len; ) {
+        address signer = initialSigners[i];
+        require(signer != address(0), "KOO: Zero address cannot be a signer");
+        require(!isSigner[signer], "KOO: Signer already added");
+        isSigner[signer] = true;
+        signers.push(signer);
+        emit SignerAdded(signer);
+        unchecked { i++; }
     }
+
+}
+
+
 
 
 
@@ -646,10 +653,10 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         uint256 amountBNBBuyback = (amountReceived * buybackShareBP) / totalBNBFee;
 
         if(amountBNBMarketing > 0)
-            marketingWalletAddress.transfer(amountBNBMarketing); // Transfer to marketing wallet
+            marketingWalletAddress.sendValue(amountBNBMarketing); // Transfer to marketing wallet
 
         if(amountBNBTeam > 0)
-            teamWalletAddress.transfer(amountBNBTeam); // Transfer to team wallet
+            teamWalletAddress.sendValue(amountBNBTeam); // Transfer to team wallet
 
         if(amountBNBLiquidity > 0 && tokensForLP > 0)
             addLiquidity(tokensForLP, amountBNBLiquidity); // Add liquidity to Uniswap
@@ -726,13 +733,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         );
 
         emit SwapAndLiquify(tokenAmount, ethAmount, tokenAmount);
-    }
-
-    /**
-     * @dev Transfers Ether to a specified address.
-     */
-    function transferToAddressETH(address payable recipient, uint256 amount) private {
-        recipient.sendValue(amount);
     }
 
     // Function to receive ETH from UniswapV2Router when swapping
@@ -904,7 +904,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     function withdrawEther(uint256 amount) external onlyOwner nonReentrant {
         uint256 contractBalance = address(this).balance;
         require(contractBalance >= amount, "KOO: Insufficient Ether");
-        payable(owner()).transfer(amount);
+        payable(owner()).sendValue(amount);
         emit EtherWithdrawn(owner(), amount);
     }
 
@@ -923,9 +923,10 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Allows a user to stake a specific amount of KOO tokens.
      */
     function stake(uint256 amount) external nonReentrant {
+        require(stakingStartTime > 0, "KOO: Staking not started");
+        require(block.timestamp >= stakingStartTime, "KOO: Staking not yet started");
         require(amount > 0, "KOO: Cannot stake zero");
         require(_balances[msg.sender] >= amount, "KOO: Insufficient balance");
-        require(stakingStartTime > 0, "KOO: Staking not started");
 
         // Update rewards before staking
         _updateRewards(msg.sender);
@@ -941,6 +942,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         emit Staked(msg.sender, amount);
         emit Transfer(msg.sender, address(this), amount);
     }
+
 
     /**
      * @dev Allows a user to unstake a specific amount of KOO tokens.
@@ -1196,20 +1198,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Emitted when the staking start time is updated.
      */
     event StakingStartTimeUpdated(uint256 newTimestamp);
-
-    // ----------------- Staking Initialization -----------------
-    
-    /**
-     * @dev Initializes the staking reward pool. Can only be called once by the owner.
-     */
-    function initializeStakingPool() external onlyOwner {
-        require(stakingStartTime == 0, "KOO: Staking initialized");
-        stakingRewardPool = _totalSupply * 10 / 100; // Allocate 10% for staking rewards
-        _balances[address(this)] += stakingRewardPool;
-        emit Transfer(address(0), address(this), stakingRewardPool);
-        maxTotalRewards = stakingRewardPool;
-        stakingStartTime = block.timestamp;
-    }
 
     // ----------------- Governance Helper Functions -----------------
     
