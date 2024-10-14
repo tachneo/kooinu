@@ -498,14 +498,14 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     mapping (address => bool) public isMarketPair;
 
     // Fees for buying (in basis points: 1 BP = 0.01%)
-    uint256 public _buyLiquidityFeeBP = 200; // 2%
-    uint256 public _buyMarketingFeeBP = 200; // 2%
-    uint256 public _buyTeamFeeBP = 200; // 2%
+    uint256 public _buyLiquidityFeeBP = 100; // 1%
+    uint256 public _buyMarketingFeeBP = 100; // 1%
+    uint256 public _buyTeamFeeBP = 100; // 1%
 
     // Fees for selling (in basis points)
-    uint256 public _sellLiquidityFeeBP = 200; // 2%
-    uint256 public _sellMarketingFeeBP = 200; // 2%
-    uint256 public _sellTeamFeeBP = 400; // 4%
+    uint256 public _sellLiquidityFeeBP = 100; // 1%
+    uint256 public _sellMarketingFeeBP = 100; // 1%
+    uint256 public _sellTeamFeeBP = 100; // 1%
 
     // Distribution shares (in basis points)
     uint256 public _liquidityShareBP = 400; // 4%
@@ -513,19 +513,20 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 public _teamShareBP = 1600; // 16%
 
     // Total taxes (in basis points)
-    uint256 public _totalTaxIfBuyingBP = 600; // 6%
-    uint256 public _totalTaxIfSellingBP = 800; // 8%
+    uint256 public _totalTaxIfBuyingBP = 300; // 3%
+    uint256 public _totalTaxIfSellingBP = 300; // 3%
     uint256 public _totalDistributionSharesBP = 2400; // 24%
 
     // Total supply and limits
-    uint256 private _totalSupply = 10000000000000000000 * (10 ** _decimals);
+    uint256 private _totalSupply = 1e28; // Total Supply: 10,000,000,000,000,000,000,000,000,000 (1e28)
     uint256 public _maxTxAmount = _totalSupply;
     uint256 public _walletMax = _totalSupply;
     uint256 private minimumTokensBeforeSwap = _totalSupply / 100; // 1% of total supply
 
     // Maximum fee limits
-    uint256 private constant MAX_TOTAL_FEE_BP = 2000; // Maximum total fee is 20%
-    uint256 private constant MAX_INDIVIDUAL_FEE_BP = 1000; // Maximum individual fee is 10%
+    uint256 private constant MAX_TOTAL_FEE_BP = 500; // Maximum total fee is 5%
+    uint256 private constant MAX_INDIVIDUAL_FEE_BP = 300; // Maximum individual fee is 3%
+
 
     // Minimum and maximum transaction and wallet limits
     uint256 public minTxAmount = _totalSupply / 10000; // Minimum 0.01% of total supply
@@ -541,7 +542,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     // Flags for swap and liquify functionality
     bool inSwapAndLiquify;
     bool public swapAndLiquifyEnabled = true;
-    bool public swapAndLiquifyByLimitOnly = false;
+    bool public swapAndLiquifyByLimitOnly;
     bool public checkWalletLimit = true;
 
     // Events related to swap and liquify
@@ -749,9 +750,11 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @param newTeamFeeBP New team fee percentage in basis points.
      */
     function setBuyTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP) external onlyOwner {
-        require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Liquidity fee too high");
-        require(newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Marketing fee too high");
-        require(newTeamFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Team fee too high");
+        require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP && 
+                newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP &&
+                newTeamFeeBP <= MAX_INDIVIDUAL_FEE_BP, 
+                "KooInu: One or more fees exceed the limit");
+
 
         uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP;
         require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KooInu: Total fee too high");
