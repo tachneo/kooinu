@@ -50,8 +50,8 @@ contract Ownable is Context {
      */
     function owner() public view returns (address) {
         return _owner;
-    }   
-    
+    }
+
     /**
      * @dev Modifier to restrict function access to the owner only.
      */
@@ -59,7 +59,7 @@ contract Ownable is Context {
         require(_owner == _msgSender(), "Ownable: caller is not the owner");
         _;
     }
-        
+
     /**
      * @dev Allows the current owner to relinquish control of the contract.
      */
@@ -84,7 +84,7 @@ contract Ownable is Context {
     function getUnlockTime() public view returns (uint256) {
         return _lockTime;
     }
-        
+
     /**
      * @dev Returns the current block timestamp.
      */
@@ -102,7 +102,7 @@ contract Ownable is Context {
         _lockTime = block.timestamp + time;
         emit OwnershipTransferred(_owner, address(0));
     }
-        
+
     /**
      * @dev Unlocks the contract for the owner after the lock time has passed.
      * Can only be called by the previous owner.
@@ -170,24 +170,24 @@ library Address {
 abstract contract ReentrancyGuard {
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
-    
+
     uint256 private _status;
-    
+
     constructor () {
         _status = _NOT_ENTERED;
     }
-    
+
     /**
      * @dev Prevents a contract from calling itself, directly or indirectly.
      * Applying the nonReentrant modifier to functions ensures that there are no nested (reentrant) calls to them.
      */
     modifier nonReentrant() {
         require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
-        
+
         _status = _ENTERED;
-        
+
         _;
-        
+
         _status = _NOT_ENTERED;
     }
 }
@@ -219,7 +219,7 @@ interface IUniswapV2Pair {
     function name() external view returns (string memory);
     function symbol() external view returns (string memory);
     function decimals() external view returns (uint8);
-        
+
     // ERC20 supply and balance functions
     function totalSupply() external view returns (uint);
     function balanceOf(address owner_) external view returns (uint);
@@ -232,21 +232,21 @@ interface IUniswapV2Pair {
 
     // EIP-2612 permit functionality
     function permit(
-        address owner_, 
-        address spender, 
-        uint value, 
-        uint deadline, 
-        uint8 v, 
-        bytes32 r, 
+        address owner_,
+        address spender,
+        uint value,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
         bytes32 s
     ) external;
-        
+
     // Liquidity functions
     function burn(address to) external returns (uint amount0, uint amount1);
     function swap(
-        uint amount0Out, 
-        uint amount1Out, 
-        address to, 
+        uint amount0Out,
+        uint amount1Out,
+        address to,
         bytes calldata data
     ) external;
     function skim(address to) external;
@@ -274,7 +274,7 @@ interface IUniswapV2Router01 {
         address to,
         uint deadline
     ) external returns (uint amountA, uint amountB, uint liquidity);
-        
+
     function addLiquidityETH(
         address token,
         uint amountTokenDesired,
@@ -283,7 +283,7 @@ interface IUniswapV2Router01 {
         address to,
         uint deadline
     ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
-        
+
     function removeLiquidity(
         address tokenA,
         address tokenB,
@@ -293,7 +293,7 @@ interface IUniswapV2Router01 {
         address to,
         uint deadline
     ) external returns (uint amountA, uint amountB);
-        
+
     function removeLiquidityETH(
         address token,
         uint liquidity,
@@ -302,7 +302,7 @@ interface IUniswapV2Router01 {
         address to,
         uint deadline
     ) external returns (uint amountToken, uint amountETH);
-        
+
     function removeLiquidityWithPermit(
         address tokenA,
         address tokenB,
@@ -311,12 +311,12 @@ interface IUniswapV2Router01 {
         uint amountBMin,
         address to,
         uint deadline,
-        bool approveMax, 
-        uint8 v, 
-        bytes32 r, 
+        bool approveMax,
+        uint8 v,
+        bytes32 r,
         bytes32 s
     ) external returns (uint amountA, uint amountB);
-        
+
     function removeLiquidityETHWithPermit(
         address token,
         uint liquidity,
@@ -324,12 +324,12 @@ interface IUniswapV2Router01 {
         uint amountETHMin,
         address to,
         uint deadline,
-        bool approveMax, 
-        uint8 v, 
-        bytes32 r, 
+        bool approveMax,
+        uint8 v,
+        bytes32 r,
         bytes32 s
     ) external returns (uint amountToken, uint amountETH);
-        
+
     // Swap functions
     function swapExactTokensForTokens(
         uint amountIn,
@@ -338,7 +338,7 @@ interface IUniswapV2Router01 {
         address to,
         uint deadline
     ) external returns (uint[] memory amounts);
-        
+
     function swapTokensForExactTokens(
         uint amountOut,
         uint amountInMax,
@@ -346,41 +346,41 @@ interface IUniswapV2Router01 {
         address to,
         uint deadline
     ) external returns (uint[] memory amounts);
-        
+
     function swapExactETHForTokens(
-        uint amountOutMin, 
-        address[] calldata path, 
-        address to, 
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
         uint deadline
     )
         external
         payable
         returns (uint[] memory amounts);
-        
+
     function swapTokensForExactETH(
-        uint amountOut, 
-        uint amountInMax, 
-        address[] calldata path, 
-        address to, 
+        uint amountOut,
+        uint amountInMax,
+        address[] calldata path,
+        address to,
         uint deadline
     )
         external
         returns (uint[] memory amounts);
-        
+
     function swapExactTokensForETH(
-        uint amountIn, 
-        uint amountOutMin, 
-        address[] calldata path, 
-        address to, 
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
         uint deadline
     )
         external
         returns (uint[] memory amounts);
-        
+
     function swapETHForExactTokens(
-        uint amountOut, 
-        address[] calldata path, 
-        address to, 
+        uint amountOut,
+        address[] calldata path,
+        address to,
         uint deadline
     )
         external
@@ -389,30 +389,30 @@ interface IUniswapV2Router01 {
 
     // Utility functions
     function quote(
-        uint amountA, 
-        uint reserveA, 
+        uint amountA,
+        uint reserveA,
         uint reserveB
     ) external pure returns (uint amountB);
-        
+
     function getAmountOut(
-        uint amountIn, 
-        uint reserveIn, 
+        uint amountIn,
+        uint reserveIn,
         uint reserveOut
     ) external pure returns (uint amountOut);
-        
+
     function getAmountIn(
-        uint amountOut, 
-        uint reserveIn, 
+        uint amountOut,
+        uint reserveIn,
         uint reserveOut
     ) external pure returns (uint amountIn);
-        
+
     function getAmountsOut(
-        uint amountIn, 
+        uint amountIn,
         address[] calldata path
     ) external view returns (uint[] memory amounts);
-        
+
     function getAmountsIn(
-        uint amountOut, 
+        uint amountOut,
         address[] calldata path
     ) external view returns (uint[] memory amounts);
 }
@@ -430,7 +430,7 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
         address to,
         uint deadline
     ) external returns (uint amountETH);
-        
+
     function removeLiquidityETHWithPermitSupportingFeeOnTransferTokens(
         address token,
         uint liquidity,
@@ -438,9 +438,9 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
         uint amountETHMin,
         address to,
         uint deadline,
-        bool approveMax, 
-        uint8 v, 
-        bytes32 r, 
+        bool approveMax,
+        uint8 v,
+        bytes32 r,
         bytes32 s
     ) external returns (uint amountETH);
 
@@ -452,14 +452,14 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
         address to,
         uint deadline
     ) external;
-        
+
     function swapExactETHForTokensSupportingFeeOnTransferTokens(
         uint amountOutMin,
         address[] calldata path,
         address to,
         uint deadline
     ) external payable;
-        
+
     function swapExactTokensForETHSupportingFeeOnTransferTokens(
         uint amountIn,
         uint amountOutMin,
@@ -473,24 +473,24 @@ interface IUniswapV2Router02 is IUniswapV2Router01 {
  * @dev Main contract implementing the ERC20 token with additional features.
  */
 contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
-        
+
     using Address for address payable;  // Using Address library for address type
-        
+
     // Token details
     string private _name = "KooInu";
-    string private _symbol = "PPOT";
+    string private _symbol = "KOO";
     uint8 private _decimals = 9;
 
     // Wallet addresses for marketing and team funds
     address payable public marketingWalletAddress;
     address payable public teamWalletAddress;
     address public immutable deadAddress = 0x000000000000000000000000000000000000dEaD; // Dead address for burning tokens
-        
+
     // Mapping to keep track of each account's balance
     mapping (address => uint256) private _balances;
     // Mapping to keep track of allowances
     mapping (address => mapping (address => uint256)) private _allowances;
-        
+
     // Mappings to manage fee and limit exemptions
     mapping (address => bool) public isExcludedFromFee;
     mapping (address => bool) public isWalletLimitExempt;
@@ -501,7 +501,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 public _buyLiquidityFeeBP = 200; // 2%
     uint256 public _buyMarketingFeeBP = 200; // 2%
     uint256 public _buyTeamFeeBP = 200; // 2%
-        
+
     // Fees for selling (in basis points)
     uint256 public _sellLiquidityFeeBP = 200; // 2%
     uint256 public _sellMarketingFeeBP = 200; // 2%
@@ -519,13 +519,13 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
     // Total supply and limits
     uint256 private _totalSupply = 10000000000000000000 * (10 ** _decimals);
-    uint256 public _maxTxAmount = _totalSupply; 
+    uint256 public _maxTxAmount = _totalSupply;
     uint256 public _walletMax = _totalSupply;
     uint256 private minimumTokensBeforeSwap = _totalSupply / 100; // 1% of total supply
 
     // Maximum fee limits
-    uint256 public constant MAX_TOTAL_FEE_BP = 2000; // Maximum total fee is 20%
-    uint256 public constant MAX_INDIVIDUAL_FEE_BP = 1000; // Maximum individual fee is 10%
+    uint256 private constant MAX_TOTAL_FEE_BP = 2000; // Maximum total fee is 20%
+    uint256 private constant MAX_INDIVIDUAL_FEE_BP = 1000; // Maximum individual fee is 10%
 
     // Minimum and maximum transaction and wallet limits
     uint256 public minTxAmount = _totalSupply / 10000; // Minimum 0.01% of total supply
@@ -533,10 +533,11 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 public minWalletLimit = _totalSupply / 10000; // Minimum 0.01% of total supply
     uint256 public maxWalleTlimiT = _totalSupply; // Max is total supply
 
+
     // Uniswap router and pair addresses
     IUniswapV2Router02 public uniswapV2Router;
     address public uniswapPair;
-        
+
     // Flags for swap and liquify functionality
     bool inSwapAndLiquify;
     bool public swapAndLiquifyEnabled = true;
@@ -550,39 +551,39 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         uint256 ethReceived,
         uint256 tokensIntoLiqudity
     );
-        
+
     // Events for token and ETH swaps
     event SwapETHForTokens(
         uint256 amountIn,
         address[] path
     );
-        
+
     event SwapTokensForETH(
         uint256 amountIn,
         address[] path
     );
-        
+
     // Events for Ether and ERC20 withdrawals
     event EtherWithdrawn(address indexed owner, uint256 amount);
     event ERC20Withdrawn(address indexed owner, address indexed token, uint256 amount);
-        
+
     // Modifier to prevent reentrancy during swap and liquify
     modifier lockTheSwap {
         inSwapAndLiquify = true;
         _;
         inSwapAndLiquify = false;
     }
-        
+
     // Constructor to initialize the contract
     constructor () ReentrancyGuard() {
         // Set the marketing and team wallet addresses
         marketingWalletAddress = payable(0x7184eAC82c0C3F6bcdFD1c28A508dC4a18120b1e); // Marketing Address
         teamWalletAddress = payable(0xa26809d31cf0cCd4d11C520F84CE9a6Fc4d4bb75); // Team Address
-            
+
         // Initialize Uniswap router with the specified address
         IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(
             0x10ED43C718714eb63d5aA57B78B54704E256024E // Example: PancakeSwap Router on BSC
-        ); 
+        );
 
         // Create a Uniswap pair for this token
         uniswapPair = IUniswapV2Factory(_uniswapV2Router.factory())
@@ -596,7 +597,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         // Exclude owner and contract from fee
         isExcludedFromFee[owner()] = true;
         isExcludedFromFee[address(this)] = true;
-            
+
         // Calculate total taxes for buying and selling
         _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP;
         _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP;
@@ -606,7 +607,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         isWalletLimitExempt[owner()] = true;
         isWalletLimitExempt[address(uniswapPair)] = true;
         isWalletLimitExempt[address(this)] = true;
-            
+
         // Exempt owner and contract from transaction limit
         isTxLimitExempt[owner()] = true;
         isTxLimitExempt[address(this)] = true;
@@ -730,7 +731,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         isTxLimitExempt[holder] = exempt;
         emit TxLimitExemptStatusUpdated(holder, exempt);
     }
-        
+
     /**
      * @dev Sets the fee exemption status for a specific account.
      * @param account The address to set exemption status.
@@ -786,7 +787,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
         emit SellTaxesUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP);
     }
-        
+
     /**
      * @dev Sets the distribution shares for liquidity, marketing, and team.
      * @param newLiquidityShareBP New liquidity share percentage in basis points.
@@ -802,7 +803,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
         emit DistributionSettingsUpdated(newLiquidityShareBP, newMarketingShareBP, newTeamShareBP);
     }
-        
+
     /**
      * @dev Sets the maximum transaction amount.
      * @param maxTxAmount New maximum transaction amount.
@@ -871,7 +872,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         swapAndLiquifyByLimitOnly = newValue;
         emit SwapAndLiquifyByLimitOnlyUpdated(newValue);
     }
-        
+
     /**
      * @dev Returns the circulating supply (total supply minus the balance of the dead address).
      */
@@ -893,7 +894,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
      // Function to receive ETH from UniswapV2Router when swapping
     receive() external payable {}
-        
+
     /**
      * @dev Transfers tokens to a specified address.
      * @param recipient The address to receive tokens.
@@ -931,17 +932,17 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         require(sender != address(0), "KooInu: transfer from zero address"); // Prevent transfer from zero address
         require(recipient != address(0), "KooInu: transfer to zero address"); // Prevent transfer to zero address
 
-        if(inSwapAndLiquify) { 
+        if(inSwapAndLiquify) {
             return _basicTransfer(sender, recipient, amount); // If already in swap and liquify, perform a basic transfer
         }
         else {
             if(!isTxLimitExempt[sender] && !isTxLimitExempt[recipient]) {
                 require(amount <= _maxTxAmount, "KooInu: exceeds maxTxAmount."); // Enforce max transaction limit
-            }            
+            }
 
             uint256 contractTokenBalance = balanceOf(address(this)); // Get the contract's token balance
             bool overMinimumTokenBalance = contractTokenBalance >= minimumTokensBeforeSwap;
-                
+
             // Check if conditions are met to perform swap and liquify
             if (overMinimumTokenBalance && !inSwapAndLiquify && !isMarketPair[sender] && swapAndLiquifyEnabled) 
             {
@@ -996,7 +997,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         uint256 amountReceived = address(this).balance; // Get the ETH received from swap
 
         uint256 totalBNBFee = _totalDistributionSharesBP - (_liquidityShareBP / 2);
-            
+
         // Calculate amounts for liquidity, team, and marketing
         uint256 amountBNBLiquidity = (amountReceived * _liquidityShareBP) / totalBNBFee / 2;
         uint256 amountBNBTeam = (amountReceived * _teamShareBP) / totalBNBFee;
@@ -1011,7 +1012,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         if(amountBNBLiquidity > 0 && tokensForLP > 0)
             addLiquidity(tokensForLP, amountBNBLiquidity); // Add liquidity to Uniswap
     }
-        
+
     /**
      * @dev Swaps a specified amount of tokens for ETH using Uniswap.
      * @param tokenAmount The amount of tokens to swap.
@@ -1032,9 +1033,10 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
             address(this), // The contract
             block.timestamp
         );
-        
+
         emit SwapTokensForETH(tokenAmount, path); // Emit event after swap
     }
+
 
 
     /**
@@ -1065,7 +1067,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      */
     function takeFee(address sender, address recipient, uint256 amount) internal returns (uint256) {
         uint256 feeAmount = 0;
-            
+
         bool isBuy = isMarketPair[sender];
         bool isSell = isMarketPair[recipient];
 
@@ -1074,7 +1076,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
             feeAmount = (amount * totalTaxBP) / 10000;
         }
 
-            
+
         if(feeAmount > 0) {
             _balances[address(this)] += feeAmount; // Add fee to contract balance
             emit Transfer(sender, address(this), feeAmount); // Emit transfer event for fee
@@ -1082,7 +1084,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
         return amount - feeAmount; // Return the amount after fee deduction
     }
-        
+
     // ----------------- Withdrawal Functions -----------------
 
     /**
@@ -1108,7 +1110,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     }
 
     // ----------------- Event Declarations for Enhanced Access Control Transparency -----------------
-    
+
     /**
      * @dev Emitted when the market pair status of an account is updated.
      */
