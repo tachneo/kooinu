@@ -669,7 +669,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Increases the allowance of a spender.
      */
     function increaseAllowance(address spender, uint256 addedValue) public virtual returns (bool) {
-        require(spender != address(0), "KooInu: increase allowance for zero address");
+        require(spender != address(0), "KooInu: increase allowance");
         _approve(_msgSender(), spender, _allowances[_msgSender()][spender] + addedValue);
         return true;
     }
@@ -678,8 +678,8 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Decreases the allowance of a spender.
      */
     function decreaseAllowance(address spender, uint256 subtractedValue) public virtual returns (bool) {
-        require(spender != address(0), "KooInu: decrease allowance for zero address");
-        require(_allowances[_msgSender()][spender] >= subtractedValue, "KooInu: decreased allowance below zero");
+        require(spender != address(0), "KooInu: decrease allowance");
+        require(_allowances[_msgSender()][spender] >= subtractedValue, "KooInu: decreased allowance");
         _approve(_msgSender(), spender, _allowances[_msgSender()][spender] - subtractedValue);
         return true;
     }
@@ -695,7 +695,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Approves a spender to spend a specified amount of tokens on behalf of the caller.
      */
     function approve(address spender, uint256 amount) public override returns (bool) {
-        require(spender != address(0), "KooInu: approve to zero address");
+        require(spender != address(0), "KooInu: approve");
         _approve(_msgSender(), spender, amount);
         return true;
     }
@@ -704,7 +704,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Internal function to handle approvals.
      */
     function _approve(address owner_, address spender, uint256 amount) private {
-        require(owner_ != address(0) && spender != address(0), "KooInu: invalid addresses");
+        require(owner_ != address(0) && spender != address(0), "KooInu: invalid");
 
 
         _allowances[owner_][spender] = amount; // Set the allowance
@@ -753,11 +753,11 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP && 
                 newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP &&
                 newTeamFeeBP <= MAX_INDIVIDUAL_FEE_BP, 
-                "KooInu: One or more fees exceed the limit");
+                "KooInu: exceed limit");
 
 
         uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP;
-        require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KooInu: Total fee too high");
+        require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KooInu: high");
 
         _buyLiquidityFeeBP = newLiquidityFeeBP;
         _buyMarketingFeeBP = newMarketingFeeBP;
@@ -775,12 +775,12 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @param newTeamFeeBP New team fee percentage in basis points.
      */
     function setSellTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP) external onlyOwner {
-        require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Liquidity fee too high");
-        require(newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Marketing fee too high");
+        require(newLiquidityFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: high");
+        require(newMarketingFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: high");
         require(newTeamFeeBP <= MAX_INDIVIDUAL_FEE_BP, "KooInu: Team fee too high");
 
         uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP;
-        require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KooInu: Total fee too high");
+        require(totalFeeBP <= MAX_TOTAL_FEE_BP, "KooInu: high");
 
         _sellLiquidityFeeBP = newLiquidityFeeBP;
         _sellMarketingFeeBP = newMarketingFeeBP;
@@ -812,8 +812,8 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @param maxTxAmount New maximum transaction amount.
      */
     function setMaxTxAmount(uint256 maxTxAmount) external onlyOwner {
-        require(maxTxAmount >= minTxAmount, "KooInu: Max transaction amount too low");
-        require(maxTxAmount <= maXtxAmounT, "KooInu: Max transaction amount too high");
+        require(maxTxAmount >= minTxAmount, "KooInu: low");
+        require(maxTxAmount <= maXtxAmounT, "KooInu: high");
         _maxTxAmount = maxTxAmount;
         emit MaxTxAmountUpdated(maxTxAmount);
     }
@@ -843,8 +843,8 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @param newLimit New wallet limit.
      */
     function setWalletLimit(uint256 newLimit) external onlyOwner {
-        require(newLimit >= minWalletLimit, "KooInu: Wallet limit too low");
-        require(newLimit <= maxWalleTlimiT, "KooInu: Wallet limit too high");
+        require(newLimit >= minWalletLimit, "KooInu: low");
+        require(newLimit <= maxWalleTlimiT, "KooInu: high");
         _walletMax  = newLimit;
         emit WalletLimitUpdated(newLimit);
     }
@@ -917,7 +917,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
         _transfer(sender, recipient, amount);
         // Decrease the allowance accordingly
-        require(_allowances[sender][_msgSender()] >= amount, "KooInu: transfer amount exceeds allowance");
+        require(_allowances[sender][_msgSender()] >= amount, "KooInu: exceeds allowance");
         _approve(sender, _msgSender(), _allowances[sender][_msgSender()] - amount);
         return true;
     }
@@ -932,8 +932,8 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      */
     function _transfer(address sender, address recipient, uint256 amount) private nonReentrant returns (bool) {
 
-        require(sender != address(0), "KooInu: transfer from zero address"); // Prevent transfer from zero address
-        require(recipient != address(0), "KooInu: transfer to zero address"); // Prevent transfer to zero address
+        require(sender != address(0), "KooInu: transfer"); // Prevent transfer from zero address
+        require(recipient != address(0), "KooInu: transfer"); // Prevent transfer to zero address
 
         if(inSwapAndLiquify) {
             return _basicTransfer(sender, recipient, amount); // If already in swap and liquify, perform a basic transfer
@@ -963,7 +963,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
             // Check wallet limit if applicable
             uint256 walletMax = _walletMax;
-            require(balanceOf(recipient) + finalAmount <= walletMax, "KooInu: exceeds max wallet limit");
+            require(balanceOf(recipient) + finalAmount <= walletMax, "KooInu: exceeds limit");
 
 
             // Add the final amount to the recipient's balance
@@ -1095,7 +1095,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @param amount The amount of Ether to withdraw in wei.
      */
     function withdrawEther(uint256 amount) external onlyOwner nonReentrant {
-        require(address(this).balance >= amount, "KooInu: Insufficient Ether balance");
+        require(address(this).balance >= amount, "KooInu: low balance");
         payable(owner()).transfer(amount);
         emit EtherWithdrawn(owner(), amount);
     }
@@ -1107,7 +1107,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @param tokenAmount The amount of tokens to withdraw.
      */
     function withdrawERC20(address tokenAddress, uint256 tokenAmount) external onlyOwner nonReentrant {
-        require(tokenAddress != address(this), "KooInu: Cannot withdraw own tokens");
+        require(tokenAddress != address(this), "KooInu: Cannot withdraw");
         IERC20(tokenAddress).transfer(owner(), tokenAmount);
         emit ERC20Withdrawn(owner(), tokenAddress, tokenAmount);
     }
