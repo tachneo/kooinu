@@ -708,6 +708,59 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         emit Approval(owner_, spender, amount); // Emit Approval event
     }
 
+    //------------AIRDROP------//
+
+    //-------Lottery -----
+
+    // Event for announcing the lottery winner
+    event LotteryWinner(address indexed winner, uint256 rewardAmount);
+
+    // Lottery pool percentage (0.1% of total supply, changeable)
+    uint256 public lotteryPoolAmount = totalSupply() / 1000; 
+
+    // Function to set the lottery pool amount (onlyOwner can change this)
+    function setLotteryPoolAmount(uint256 newLotteryPoolAmount) external onlyOwner {
+        require(newLotteryPoolAmount > 0, "Lottery pool amount must be greater than zero");
+        lotteryPoolAmount = newLotteryPoolAmount;
+        emit LotteryPoolAmountUpdated(newLotteryPoolAmount);
+    }
+
+    // Function to initiate lottery and reward the winner
+    function initiateLottery() public onlyOwner nonReentrant {
+        // Check if lottery pool has enough tokens to reward
+        require(balanceOf(address(this)) >= lotteryPoolAmount, "Insufficient pool for lottery reward");
+
+        // Generate a pseudo-random number (this is not truly secure randomness)
+        uint256 randomIndex = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao))) % totalSupply();
+
+
+        // Iterate over holders to find the winning address
+        address winner = _findLotteryWinner(randomIndex);
+        require(winner != address(0), "No winner found");
+
+        // Transfer lottery reward to the winner
+        _transfer(address(this), winner, lotteryPoolAmount);
+
+        emit LotteryWinner(winner, lotteryPoolAmount);
+    }
+
+    address[] public holders;  // List to store all token holders
+
+    function _findLotteryWinner(uint256 randomIndex) internal view returns (address) {
+        uint256 cumulativeBalance = 0;
+        for (uint256 i = 0; i < holders.length; i++) {
+            cumulativeBalance += balanceOf(holders[i]);
+            if (randomIndex <= cumulativeBalance) {
+                return holders[i]; // Winner is found
+            }
+        }
+        return address(0); // Default return if no winner (shouldn't occur)
+    }
+
+    // Event to track changes to the lottery pool amount
+    event LotteryPoolAmountUpdated(uint256 newLotteryPoolAmount);
+
+
     // ----------------- Administrative Functions -----------------
 
     /**
@@ -934,48 +987,42 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @param amount The amount of tokens to transfer.
      */
     function _transfer(address sender, address recipient, uint256 amount) private nonReentrant returns (bool) {
-
-        require(sender != address(0), "KooInu: transfer"); // Prevent transfer from zero address
-        require(recipient != address(0), "KooInu: transfer"); // Prevent transfer to zero address
+        require(sender != address(0), "KooInu: transfer");
+        require(recipient != address(0), "KooInu: transfer");
 
         if(inSwapAndLiquify) {
-            return _basicTransfer(sender, recipient, amount); // If already in swap and liquify, perform a basic transfer
-        }
-        else {
+            return _basicTransfer(sender, recipient, amount);  // Early return
+        } else {
+            // Transaction limit check
             if(!isTxLimitExempt[sender] && !isTxLimitExempt[recipient]) {
-                require(amount < _maxTxAmount, "KooInu: exceeds maxTxAmount."); // Enforce max transaction limit
+                require(amount < _maxTxAmount, "KooInu: exceeds maxTxAmount.");
             }
 
-            uint256 contractTokenBalance = balanceOf(address(this)); // Get the contract's token balance
-            bool overMinimumTokenBalance = contractTokenBalance > minimumTokensBeforeSwap;
-
-            // Check if conditions are met to perform swap and liquify
-            if (overMinimumTokenBalance && !inSwapAndLiquify && !isMarketPair[sender] && swapAndLiquifyEnabled) 
-            {
-                if(swapAndLiquifyByLimitOnly)
-                    contractTokenBalance > minimumTokensBeforeSwap; // Use minimum tokens if swap by limit only
-                swapAndLiquify(contractTokenBalance); // Perform swap and liquify
-            }
-
-            // Subtract the amount from the sender's balance
+            // **STATE CHANGES FIRST**: Update balances before any external calls
             _balances[sender] = _balances[sender] - amount;
 
-            // Calculate the final amount after deducting fees if applicable
             uint256 finalAmount = (isExcludedFromFee[sender] || isExcludedFromFee[recipient]) ? 
-                                         amount : takeFee(sender, recipient, amount);
+                                amount : takeFee(sender, recipient, amount);
 
-            // Check wallet limit if applicable
-            uint256 walletMax = _walletMax;
-            require(balanceOf(recipient) + finalAmount < walletMax, "KooInu: exceeds limit");
-
-
-            // Add the final amount to the recipient's balance
             _balances[recipient] = _balances[recipient] + finalAmount;
 
-            emit Transfer(sender, recipient, finalAmount); // Emit the transfer event
+            emit Transfer(sender, recipient, finalAmount);
+
+            // External call (swapAndLiquify) after all state changes
+            uint256 contractTokenBalance = balanceOf(address(this));
+            bool overMinimumTokenBalance = contractTokenBalance > minimumTokensBeforeSwap;
+
+            if (overMinimumTokenBalance && !inSwapAndLiquify && !isMarketPair[sender] && swapAndLiquifyEnabled) {
+                if(swapAndLiquifyByLimitOnly) {
+                    contractTokenBalance = minimumTokensBeforeSwap;  // Swap only up to the limit
+                }
+                swapAndLiquify(contractTokenBalance);  // External call AFTER state changes
+            }
+
             return true;
         }
     }
+
 
     /**
      * @dev Performs a basic transfer without taking any fees.
