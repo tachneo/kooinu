@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.28;
 
 /**
- * @title KooInu (KOO) Smart Contract
+ * @title Koo Inu (KOO) Smart Contract
  * @dev ERC20 Token with Fee Management, Automated Liquidity Provision, and Enhanced Security Features
- *
+ * coded by info@tachy.in
  * @custom:dev-run-script ./scripts/deploy.js
  */
 
@@ -478,7 +478,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     using Address for address payable;  // Using Address library for address type
 
     // Token details
-    string private _name = "KooInu";
+    string private _name = "Koo Inu";
     string private _symbol = "KOO";
     uint8 private _decimals = 9;
 
@@ -708,228 +708,110 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         emit Approval(owner_, spender, amount); // Emit Approval event
     }
 
-    //------------AIRDROP------//
-
-    //-------Lottery -----
-
-    // Event for announcing the lottery winner
-    event LotteryWinner(address indexed winner, uint256 rewardAmount);
-
-    // Lottery pool percentage (0.1% of total supply, changeable)
-    uint256 public lotteryPoolAmount = totalSupply() / 1000; 
-
-    // Function to set the lottery pool amount (onlyOwner can change this)
-    function setLotteryPoolAmount(uint256 newLotteryPoolAmount) external onlyOwner {
-        require(newLotteryPoolAmount > 0, "Lottery pool amount must be greater than zero");
-        lotteryPoolAmount = newLotteryPoolAmount;
-        emit LotteryPoolAmountUpdated(newLotteryPoolAmount);
-    }
-
-    // Function to initiate lottery and reward the winner
-    function initiateLottery() public onlyOwner nonReentrant {
-        // Check if lottery pool has enough tokens to reward
-        require(balanceOf(address(this)) >= lotteryPoolAmount, "Insufficient pool for lottery reward");
-
-        // Generate a pseudo-random number (this is not truly secure randomness)
-        uint256 randomIndex = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao))) % totalSupply();
-
-
-        // Iterate over holders to find the winning address
-        address winner = _findLotteryWinner(randomIndex);
-        require(winner != address(0), "No winner found");
-
-        // Transfer lottery reward to the winner
-        _transfer(address(this), winner, lotteryPoolAmount);
-
-        emit LotteryWinner(winner, lotteryPoolAmount);
-    }
-
-    address[] public holders;  // List to store all token holders
-
-    function _findLotteryWinner(uint256 randomIndex) internal view returns (address) {
-        uint256 cumulativeBalance = 0;
-        for (uint256 i = 0; i < holders.length; i++) {
-            cumulativeBalance += balanceOf(holders[i]);
-            if (randomIndex <= cumulativeBalance) {
-                return holders[i]; // Winner is found
-            }
-        }
-        return address(0); // Default return if no winner (shouldn't occur)
-    }
-
-    // Event to track changes to the lottery pool amount
-    event LotteryPoolAmountUpdated(uint256 newLotteryPoolAmount);
-
 
     // ----------------- Administrative Functions -----------------
 
-    /**
-     * @dev Sets the market pair status for a specific account.
-     * @param account The address to set as a market pair.
-     * @param newValue The boolean value indicating market pair status.
-     */
-    function setMarketPairStatus(address account, bool newValue) public onlyOwner {
+    // Function to set market pair status
+    function setMarketPairStatus(address account, bool newValue) external onlyOwner {
         isMarketPair[account] = newValue;
         emit MarketPairStatusUpdated(account, newValue);
     }
 
-    /**
-     * @dev Sets the transaction limit exemption status for a holder.
-     * @param holder The address to set exemption status.
-     * @param exempt The boolean value indicating exemption.
-     */
+    // Function to set transaction limit exemption
     function setIsTxLimitExempt(address holder, bool exempt) external onlyOwner {
         isTxLimitExempt[holder] = exempt;
         emit TxLimitExemptStatusUpdated(holder, exempt);
     }
 
-    /**
-     * @dev Sets the fee exemption status for a specific account.
-     * @param account The address to set exemption status.
-     * @param newValue The boolean value indicating exemption.
-     */
-    function setIsExcludedFromFee(address account, bool newValue) public onlyOwner {
+    // Function to set fee exemption
+    function setIsExcludedFromFee(address account, bool newValue) external onlyOwner {
         isExcludedFromFee[account] = newValue;
         emit FeeExemptionStatusUpdated(account, newValue);
     }
 
-    /**
-     * @dev Sets the buy taxes: liquidity, marketing, and team fees.
-     * @param newLiquidityFeeBP New liquidity fee percentage in basis points.
-     * @param newMarketingFeeBP New marketing fee percentage in basis points.
-     * @param newTeamFeeBP New team fee percentage in basis points.
-     */
+    // Function to set buy taxes
     function setBuyTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP) external onlyOwner {
-        require(newLiquidityFeeBP < MAX_INDIVIDUAL_FEE_BP, "KooInu: exceeds limit");
-        require(newMarketingFeeBP < MAX_INDIVIDUAL_FEE_BP, "KooInu:exceeds limit");
-        require(newTeamFeeBP < MAX_INDIVIDUAL_FEE_BP, "KooInu: limit");
-
-
-
+        require(newLiquidityFeeBP < MAX_INDIVIDUAL_FEE_BP && newMarketingFeeBP < MAX_INDIVIDUAL_FEE_BP && newTeamFeeBP < MAX_INDIVIDUAL_FEE_BP, "Fees exceed limit");
         uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP;
-        require(totalFeeBP < MAX_TOTAL_FEE_BP, "KooInu: high");
-
+        require(totalFeeBP < MAX_TOTAL_FEE_BP, "Total fee too high");
+        
         _buyLiquidityFeeBP = newLiquidityFeeBP;
         _buyMarketingFeeBP = newMarketingFeeBP;
         _buyTeamFeeBP = newTeamFeeBP;
-
-        _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP;
-
+        _totalTaxIfBuyingBP = totalFeeBP;
+        
         emit BuyUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP);
     }
 
-    /**
-     * @dev Sets the sell taxes: liquidity, marketing, and team fees.
-     * @param newLiquidityFeeBP New liquidity fee percentage in basis points.
-     * @param newMarketingFeeBP New marketing fee percentage in basis points.
-     * @param newTeamFeeBP New team fee percentage in basis points.
-     */
+    // Function to set sell taxes
     function setSellTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP) external onlyOwner {
-        require(newLiquidityFeeBP < MAX_INDIVIDUAL_FEE_BP, "KooInu: high");
-        require(newMarketingFeeBP < MAX_INDIVIDUAL_FEE_BP, "KooInu: high");
-        require(newTeamFeeBP < MAX_INDIVIDUAL_FEE_BP, "KooInu: Team fee too high");
-
+        require(newLiquidityFeeBP < MAX_INDIVIDUAL_FEE_BP && newMarketingFeeBP < MAX_INDIVIDUAL_FEE_BP && newTeamFeeBP < MAX_INDIVIDUAL_FEE_BP, "Fees exceed limit");
         uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP;
-        require(totalFeeBP < MAX_TOTAL_FEE_BP, "KooInu: high");
+        require(totalFeeBP < MAX_TOTAL_FEE_BP, "Total fee too high");
 
         _sellLiquidityFeeBP = newLiquidityFeeBP;
         _sellMarketingFeeBP = newMarketingFeeBP;
         _sellTeamFeeBP = newTeamFeeBP;
-
-        _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP;
-
+        _totalTaxIfSellingBP = totalFeeBP;
+        
         emit SellTaxesUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP);
     }
 
-    /**
-     * @dev Sets the distribution shares for liquidity, marketing, and team.
-     * @param newLiquidityShareBP New liquidity share percentage in basis points.
-     * @param newMarketingShareBP New marketing share percentage in basis points.
-     * @param newTeamShareBP New team share percentage in basis points.
-     */
+    // Function to set distribution shares
     function setDistributionSettings(uint256 newLiquidityShareBP, uint256 newMarketingShareBP, uint256 newTeamShareBP) external onlyOwner {
         _liquidityShareBP = newLiquidityShareBP;
         _marketingShareBP = newMarketingShareBP;
         _teamShareBP = newTeamShareBP;
-
-        _totalDistributionSharesBP = _liquidityShareBP + _marketingShareBP + _teamShareBP;
-
+        _totalDistributionSharesBP = newLiquidityShareBP + newMarketingShareBP + newTeamShareBP;
         emit DistributionSettingsUpdated(newLiquidityShareBP, newMarketingShareBP, newTeamShareBP);
     }
 
-    /**
-     * @dev Sets the maximum transaction amount.
-     * @param maxTxAmount New maximum transaction amount.
-     */
+    // Function to set max transaction amount
     function setMaxTxAmount(uint256 maxTxAmount) external onlyOwner {
-        require(maxTxAmount > minTxAmount, "KooInu: low");
-        require(maxTxAmount < maXtxAmounT, "KooInu: high");
+        require(maxTxAmount > minTxAmount, "Below minimum");
         _maxTxAmount = maxTxAmount;
         emit MaxTxAmountUpdated(maxTxAmount);
     }
 
-
-    /**
-     * @dev Enables or disables the wallet limit.
-     * @param newValue Boolean indicating whether to enable or disable the wallet limit.
-     */
+    // Function to enable/disable wallet limit
     function enableDisableWalletLimit(bool newValue) external onlyOwner {
-       checkWalletLimit = newValue;
-       emit WalletLimitEnabled(newValue);
+        checkWalletLimit = newValue;
+        emit WalletLimitEnabled(newValue);
     }
 
-    /**
-     * @dev Sets the wallet limit exemption status for a holder.
-     * @param holder The address to set exemption status.
-     * @param exempt The boolean value indicating exemption.
-     */
+    // Function to set wallet limit exemption
     function setIsWalletLimitExempt(address holder, bool exempt) external onlyOwner {
         isWalletLimitExempt[holder] = exempt;
         emit WalletLimitExemptStatusUpdated(holder, exempt);
     }
 
-    /**
-     * @dev Sets the maximum number of tokens a wallet can hold.
-     * @param newLimit New wallet limit.
-     */
+    // Function to set wallet limit
     function setWalletLimit(uint256 newLimit) external onlyOwner {
-        require(newLimit > minWalletLimit, "KooInu: low");
-        require(newLimit < maxWalleTlimiT, "KooInu: high");
-        _walletMax  = newLimit;
+        require(newLimit > minWalletLimit, "Below minimum");
+        _walletMax = newLimit;
         emit WalletLimitUpdated(newLimit);
     }
 
-    /**
-     * @dev Sets the minimum number of tokens before a swap is triggered.
-     * @param newLimit New minimum token threshold for swapping.
-     */
+    // Function to set minimum tokens before swap
     function setNumTokensBeforeSwap(uint256 newLimit) external onlyOwner {
         minimumTokensBeforeSwap = newLimit;
         emit NumTokensBeforeSwapUpdated(newLimit);
     }
 
-    /**
-     * @dev Enables or disables the swap and liquify feature.
-     * @param _enabled Boolean indicating whether to enable or disable swap and liquify.
-     */
-    function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
+    // Function to enable/disable swap and liquify
+    function setSwapAndLiquifyEnabled(bool _enabled) external onlyOwner {
         swapAndLiquifyEnabled = _enabled;
         emit SwapAndLiquifyEnabledUpdated(_enabled);
     }
 
-    /**
-     * @dev Sets whether swap and liquify should occur only when the threshold is reached.
-     * @param newValue Boolean indicating the swap and liquify condition.
-     */
-    function setSwapAndLiquifyByLimitOnly(bool newValue) public onlyOwner {
+    // Function to set swap and liquify condition
+    function setSwapAndLiquifyByLimitOnly(bool newValue) external onlyOwner {
         swapAndLiquifyByLimitOnly = newValue;
         emit SwapAndLiquifyByLimitOnlyUpdated(newValue);
     }
 
-    /**
-     * @dev Returns the circulating supply (total supply minus the balance of the dead address).
-     */
-    function getCirculatingSupply() public view returns (uint256) {
+    // Function to get circulating supply
+    function getCirculatingSupply() external view returns (uint256) {
         return _totalSupply - balanceOf(deadAddress);
     }
 
@@ -944,11 +826,20 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     event EtherTransferred(address indexed recipient, uint256 amount);
 
     function transferToAddressETH(address payable recipient, uint256 amount) private {
-        // Line 960 (transferToAddressETH)
-        (bool success, ) = recipient.call{value: amount}("");
-        require(success, "KooInu: ETH transfer failed.");
+        require(address(this).balance >= amount, "KooInu: Insufficient balance for transfer");
 
+        (bool success, ) = recipient.call{value: amount}("");
+        
+        if (!success) {
+            // If the call fails, the contract tries to transfer the ETH using the send method
+            (bool fallbackSuccess, ) = recipient.call{value: amount}("");
+            require(fallbackSuccess, "KooInu: ETH transfer failed.");
+        }
+
+        // Event to log the successful ETH transfer
+        emit EtherTransferred(recipient, amount);
     }
+
 
 
      // Function to receive ETH from UniswapV2Router when swapping
