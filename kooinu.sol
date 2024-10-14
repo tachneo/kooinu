@@ -56,7 +56,7 @@ contract Ownable is Context {
      * @dev Modifier to restrict function access to the owner only.
      */
     modifier onlyOwner() {
-        require(_owner == _msgSender(), "Ownable: caller is not the owner");
+        require(_owner == _msgSender(), "Not owner");
         _;
     }
 
@@ -73,7 +73,7 @@ contract Ownable is Context {
      * Can only be called by the current owner.
      */
     function transferOwnership(address newOwner) public virtual onlyOwner {
-        require(newOwner != address(0), "Ownable: new owner is the zero address");
+        require(newOwner != address(0), "Zero address");
         emit OwnershipTransferred(_owner, newOwner);
         _owner = newOwner;
     }
@@ -108,7 +108,7 @@ contract Ownable is Context {
      * Can only be called by the previous owner.
      */
     function unlock() public virtual {
-        require(_previousOwner == _msgSender(), "Ownable: caller is not the previous owner");
+        require(_previousOwner == _msgSender(), "Not previous owner");
         require(block.timestamp > _lockTime, "Ownable: contract is still locked");
         emit OwnershipTransferred(address(0), _previousOwner);
         _owner = _previousOwner;
@@ -950,7 +950,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
             if (overMinimumTokenBalance && !inSwapAndLiquify && !isMarketPair[sender] && swapAndLiquifyEnabled) 
             {
                 if(swapAndLiquifyByLimitOnly)
-                    contractTokenBalance = minimumTokensBeforeSwap; // Use minimum tokens if swap by limit only
+                    contractTokenBalance >= minimumTokensBeforeSwap; // Use minimum tokens if swap by limit only
                 swapAndLiquify(contractTokenBalance); // Perform swap and liquify
             }
 
