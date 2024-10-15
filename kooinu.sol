@@ -32,6 +32,7 @@ contract Ownable is Context {
     address private _owner;
     address private _previousOwner;
     uint256 private _lockTime;
+    bool private _ownershipWaived = false; // New state variable to track ownership waiver
 
     // Event emitted when ownership is transferred
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -62,10 +63,12 @@ contract Ownable is Context {
 
     /**
      * @dev Allows the current owner to relinquish control of the contract.
+     * Ownership is waived permanently, and cannot be reclaimed.
      */
     function waiveOwnership() public virtual onlyOwner {
         emit OwnershipTransferred(_owner, address(0));
         _owner = address(0);
+        _ownershipWaived = true; // Mark ownership as waived
     }
 
     /**
@@ -74,6 +77,7 @@ contract Ownable is Context {
      */
     function transferOwnership(address newOwner) public virtual onlyOwner {
         require(newOwner != address(0), "Zero address");
+        require(!_ownershipWaived, "Ownership has been waived permanently"); // Prevent transfer after waiving ownership
         emit OwnershipTransferred(_owner, newOwner);
         _owner = newOwner;
     }
@@ -94,9 +98,10 @@ contract Ownable is Context {
 
     /**
      * @dev Locks the contract for the owner for the specified amount of time.
-     * Can only be called by the current owner.
+     * Can only be called by the current owner. This function cannot be used if ownership has been waived.
      */
     function lock(uint256 time) public virtual onlyOwner {
+        require(!_ownershipWaived, "Ownership has been waived, cannot lock"); // Prevent locking if ownership is waived
         _previousOwner = _owner;
         _owner = address(0);
         _lockTime = block.timestamp + time;
@@ -105,16 +110,17 @@ contract Ownable is Context {
 
     /**
      * @dev Unlocks the contract for the owner after the lock time has passed.
-     * Can only be called by the previous owner.
+     * Can only be called by the previous owner. This function cannot be used if ownership has been waived.
      */
     function unlock() public virtual {
         require(_previousOwner == _msgSender(), "Not prev owner");
-        require(_lockTime > block.timestamp, "Still locked");
+        require(block.timestamp > _lockTime, "Still locked");
+        require(!_ownershipWaived, "Ownership has been waived, cannot unlock"); // Prevent unlocking if ownership is waived
         emit OwnershipTransferred(address(0), _previousOwner);
         _owner = _previousOwner;
     }
-
 }
+
 
 /**
  * @dev Interface defining the ERC20 standard functions and events.
@@ -519,7 +525,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 public _totalDistributionSharesBP = 2400; // 24%
 
     // Total supply and limits
-    uint256 private _totalSupply = 1e28; // Total Supply: 10,000,000,000,000,000,000,000,000,000 (1e28)
+    uint256 private _totalSupply = 1e24; // Total Supply: (1e24)
     uint256 public _maxTxAmount = _totalSupply;
     uint256 public _walletMax = _totalSupply;
     uint256 private minimumTokensBeforeSwap = _totalSupply / 100; // 1% of total supply
@@ -530,9 +536,9 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
 
     // Minimum and maximum transaction and wallet limits
-    uint256 public minTxAmount = _totalSupply / 10000; // Minimum 0.01% of total supply
+    uint256 public minTxAmount = 0; // Minimum 0.01% of total supply
     uint256 public maXtxAmounT = _totalSupply; // Max is total supply
-    uint256 public minWalletLimit = _totalSupply / 10000; // Minimum 0.01% of total supply
+    uint256 public minWalletLimit = 0; // Minimum 0.01% of total supply
     uint256 public maxWalleTlimiT = _totalSupply; // Max is total supply
 
 
@@ -573,49 +579,32 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     }
 
     // Constructor to initialize the contract
+    // Constructor to initialize the contract
+// Constructor to initialize the contract
     constructor () ReentrancyGuard() {
         // Set the marketing and team wallet addresses
         marketingWalletAddress = payable(0x7184eAC82c0C3F6bcdFD1c28A508dC4a18120b1e); // Marketing Address
         teamWalletAddress = payable(0xa26809d31cf0cCd4d11C520F84CE9a6Fc4d4bb75); // Team Address
 
-        // Initialize Uniswap router with the specified address
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(
-            0x10ED43C718714eb63d5aA57B78B54704E256024E // Example: PancakeSwap Router on BSC
-        );
-
-        // Create a Uniswap pair for this token
-        uniswapPair = IUniswapV2Factory(_uniswapV2Router.factory())
-            .createPair(address(this), _uniswapV2Router.WETH());
-
-        // Set the Uniswap router
-        uniswapV2Router = _uniswapV2Router;
-        // Approve the Uniswap router to spend the total supply of tokens
-        _allowances[address(this)][address(uniswapV2Router)] = _totalSupply;
+        // Assign the total supply to the owner
+        _balances[_msgSender()] = _totalSupply;
+        emit Transfer(address(0), _msgSender(), _totalSupply);
 
         // Exclude owner and contract from fee
         isExcludedFromFee[owner()] = true;
         isExcludedFromFee[address(this)] = true;
 
-        // Calculate total taxes for buying and selling
-        _totalTaxIfBuyingBP = _buyLiquidityFeeBP + _buyMarketingFeeBP + _buyTeamFeeBP;
-        _totalTaxIfSellingBP = _sellLiquidityFeeBP + _sellMarketingFeeBP + _sellTeamFeeBP;
-        _totalDistributionSharesBP = _liquidityShareBP + _marketingShareBP + _teamShareBP;
-
-        // Exempt owner, Uniswap pair, and contract from wallet limit
+        // Set wallet limit exemptions
         isWalletLimitExempt[owner()] = true;
-        isWalletLimitExempt[address(uniswapPair)] = true;
         isWalletLimitExempt[address(this)] = true;
+        isWalletLimitExempt[uniswapPair] = true; // Ensure pair is excluded from limit
+    }
 
-        // Exempt owner and contract from transaction limit
-        isTxLimitExempt[owner()] = true;
-        isTxLimitExempt[address(this)] = true;
 
-        // Mark the Uniswap pair as a market pair
-        isMarketPair[address(uniswapPair)] = true;
-
-        // Assign the total supply to the owner
-        _balances[_msgSender()] = _totalSupply;
-        emit Transfer(address(0), _msgSender(), _totalSupply);
+    function initializeUniswapPair() external onlyOwner {
+        // Create Uniswap pair after deployment to avoid gas issues
+        uniswapPair = IUniswapV2Factory(uniswapV2Router.factory()).createPair(address(this), uniswapV2Router.WETH());
+        require(uniswapPair != address(0), "KooInu: Uniswap pair creation failed");
     }
 
     // ----------------- ERC20 Standard Functions -----------------
@@ -766,37 +755,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         emit DistributionSettingsUpdated(newLiquidityShareBP, newMarketingShareBP, newTeamShareBP);
     }
 
-    // Function to set max transaction amount
-    function setMaxTxAmount(uint256 maxTxAmount) external onlyOwner {
-        require(maxTxAmount > minTxAmount, "Below minimum");
-        _maxTxAmount = maxTxAmount;
-        emit MaxTxAmountUpdated(maxTxAmount);
-    }
-
-    // Function to enable/disable wallet limit
-    function enableDisableWalletLimit(bool newValue) external onlyOwner {
-        checkWalletLimit = newValue;
-        emit WalletLimitEnabled(newValue);
-    }
-
-    // Function to set wallet limit exemption
-    function setIsWalletLimitExempt(address holder, bool exempt) external onlyOwner {
-        isWalletLimitExempt[holder] = exempt;
-        emit WalletLimitExemptStatusUpdated(holder, exempt);
-    }
-
-    // Function to set wallet limit
-    function setWalletLimit(uint256 newLimit) external onlyOwner {
-        require(newLimit > minWalletLimit, "Below minimum");
-        _walletMax = newLimit;
-        emit WalletLimitUpdated(newLimit);
-    }
-
-    // Function to set minimum tokens before swap
-    function setNumTokensBeforeSwap(uint256 newLimit) external onlyOwner {
-        minimumTokensBeforeSwap = newLimit;
-        emit NumTokensBeforeSwapUpdated(newLimit);
-    }
 
     // Function to enable/disable swap and liquify
     function setSwapAndLiquifyEnabled(bool _enabled) external onlyOwner {
@@ -828,43 +786,26 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     function transferToAddressETH(address payable recipient, uint256 amount) private {
         require(address(this).balance >= amount, "KooInu: Insufficient balance for transfer");
 
+        // Attempt to transfer Ether
         (bool success, ) = recipient.call{value: amount}("");
-        
-        if (!success) {
-            // If the call fails, the contract tries to transfer the ETH using the send method
-            (bool fallbackSuccess, ) = recipient.call{value: amount}("");
-            require(fallbackSuccess, "KooInu: ETH transfer failed.");
-        }
+        require(success, "KooInu: ETH transfer failed.");
 
-        // Event to log the successful ETH transfer
+        // Emit event to log the successful ETH transfer
         emit EtherTransferred(recipient, amount);
     }
-
 
 
      // Function to receive ETH from UniswapV2Router when swapping
     receive() external payable {}
 
-    /**
-     * @dev Transfers tokens to a specified address.
-     * @param recipient The address to receive tokens.
-     * @param amount The amount of tokens to transfer.
-     */
     function transfer(address recipient, uint256 amount) public override returns (bool) {
         _transfer(_msgSender(), recipient, amount);
         return true;
     }
 
-    /**
-     * @dev Transfers tokens from one address to another using the allowance mechanism.
-     * @param sender The address sending tokens.
-     * @param recipient The address receiving tokens.
-     * @param amount The amount of tokens to transfer.
-     */
     function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
         _transfer(sender, recipient, amount);
-        // Decrease the allowance accordingly
-        require(_allowances[sender][_msgSender()] > amount, "KooInu: exceeds allowance");
+        require(_allowances[sender][_msgSender()] >= amount, "Allowance exceeded");
         _approve(sender, _msgSender(), _allowances[sender][_msgSender()] - amount);
         return true;
     }
@@ -878,41 +819,37 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @param amount The amount of tokens to transfer.
      */
     function _transfer(address sender, address recipient, uint256 amount) private nonReentrant returns (bool) {
-        require(sender != address(0), "KooInu: transfer");
-        require(recipient != address(0), "KooInu: transfer");
+        require(sender != address(0), "KooInu: transfer from the zero address");
+        require(recipient != address(0), "KooInu: transfer to the zero address");
+        require(amount > 0, "KooInu: Transfer amount must be greater than zero");
 
-        if(inSwapAndLiquify) {
-            return _basicTransfer(sender, recipient, amount);  // Early return
+        if (inSwapAndLiquify) {
+            return _basicTransfer(sender, recipient, amount);
         } else {
-            // Transaction limit check
-            if(!isTxLimitExempt[sender] && !isTxLimitExempt[recipient]) {
-                require(amount < _maxTxAmount, "KooInu: exceeds maxTxAmount.");
-            }
-
-            // **STATE CHANGES FIRST**: Update balances before any external calls
+            require(_balances[sender] >= amount, "KooInu: Insufficient balance for transfer");
+            
+            // Subtract balance before external calls to prevent reentrancy attacks
             _balances[sender] = _balances[sender] - amount;
 
-            uint256 finalAmount = (isExcludedFromFee[sender] || isExcludedFromFee[recipient]) ? 
-                                amount : takeFee(sender, recipient, amount);
+            uint256 finalAmount = (isExcludedFromFee[sender] || isExcludedFromFee[recipient]) ? amount : takeFee(sender, recipient, amount);
 
-            _balances[recipient] = _balances[recipient] + finalAmount;
-
+            _balances[recipient] += finalAmount;
             emit Transfer(sender, recipient, finalAmount);
 
-            // External call (swapAndLiquify) after all state changes
             uint256 contractTokenBalance = balanceOf(address(this));
-            bool overMinimumTokenBalance = contractTokenBalance > minimumTokensBeforeSwap;
+            bool overMinimumTokenBalance = contractTokenBalance >= minimumTokensBeforeSwap;
 
             if (overMinimumTokenBalance && !inSwapAndLiquify && !isMarketPair[sender] && swapAndLiquifyEnabled) {
-                if(swapAndLiquifyByLimitOnly) {
-                    contractTokenBalance = minimumTokensBeforeSwap;  // Swap only up to the limit
+                if (swapAndLiquifyByLimitOnly) {
+                    contractTokenBalance = minimumTokensBeforeSwap;
                 }
-                swapAndLiquify(contractTokenBalance);  // External call AFTER state changes
+                swapAndLiquify(contractTokenBalance);
             }
 
             return true;
         }
     }
+
 
 
     /**
@@ -933,54 +870,55 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @param tAmount The amount of tokens to swap and liquify.
      */
     function swapAndLiquify(uint256 tAmount) private lockTheSwap {
-        // Calculate tokens for liquidity
-        uint256 scaledAmount = tAmount * 1e18; 
-        uint256 tokensForLP = (scaledAmount * _liquidityShareBP) / _totalDistributionSharesBP / 2;
-        tokensForLP = tokensForLP / 1e18;  // Scale back down
-        uint256 tokensForSwap = tAmount - tokensForLP; // Remaining tokens to swap
+        // Split tokens for liquidity provision and swap
+        uint256 tokensForLP = (tAmount * _liquidityShareBP) / (_totalDistributionSharesBP * 2);  // Calculate half liquidity
+        uint256 tokensForSwap = tAmount - tokensForLP;  // Rest is for swap
 
-        swapTokensForEth(tokensForSwap); // Swap tokens for ETH
-        uint256 amountReceived = address(this).balance; // Get the ETH received from swap
+        if (tokensForSwap > 0) {
+            // Swap tokens for ETH
+            swapTokensForEth(tokensForSwap);
+            uint256 amountReceived = address(this).balance;
 
-        uint256 totalBNBFee = _totalDistributionSharesBP - (_liquidityShareBP / 2);
+            if (amountReceived > 0) {
+                uint256 totalBNBFee = _totalDistributionSharesBP - (_liquidityShareBP / 2);
 
-        // Calculate amounts for liquidity, team, and marketing
-        uint256 amountBNBLiquidity = (amountReceived * _liquidityShareBP) / totalBNBFee / 2;
-        uint256 amountBNBTeam = (amountReceived * _teamShareBP) / totalBNBFee;
-        uint256 amountBNBMarketing = amountReceived - amountBNBLiquidity - amountBNBTeam;
+                uint256 amountBNBLiquidity = (amountReceived * _liquidityShareBP) / totalBNBFee / 2;
+                uint256 amountBNBTeam = (amountReceived * _teamShareBP) / totalBNBFee;
+                uint256 amountBNBMarketing = amountReceived - amountBNBLiquidity - amountBNBTeam;
 
-        if(amountBNBMarketing >= 0)
-            transferToAddressETH(marketingWalletAddress, amountBNBMarketing); // Transfer to marketing wallet
+                if (amountBNBMarketing > 0)
+                    transferToAddressETH(marketingWalletAddress, amountBNBMarketing);  // Transfer to marketing wallet
 
-        if(amountBNBTeam >= 0)
-            transferToAddressETH(teamWalletAddress, amountBNBTeam); // Transfer to team wallet
+                if (amountBNBTeam > 0)
+                    transferToAddressETH(teamWalletAddress, amountBNBTeam);  // Transfer to team wallet
 
-        if(amountBNBLiquidity >= 0 && tokensForLP >= 0)
-            addLiquidity(tokensForLP, amountBNBLiquidity); // Add liquidity to Uniswap
+                if (amountBNBLiquidity > 0 && tokensForLP > 0)
+                    addLiquidity(tokensForLP, amountBNBLiquidity);  // Add liquidity
+            }
+        }
     }
+
 
     /**
      * @dev Swaps a specified amount of tokens for ETH using Uniswap.
      * @param tokenAmount The amount of tokens to swap.
      */
     function swapTokensForEth(uint256 tokenAmount) private {
-        // Generate the Uniswap pair path of token -> WETH
+        require(tokenAmount > 0, "KooInu: Token amount must be greater than 0");
+
         address[] memory path = new address[](2);
         path[0] = address(this);
         path[1] = uniswapV2Router.WETH();
 
-        _approve(address(this), address(uniswapV2Router), tokenAmount); // Approve the router to spend tokens
+        _approve(address(this), address(uniswapV2Router), tokenAmount);
 
-        // Make the swap
         uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             tokenAmount,
             0, // Accept any amount of ETH
             path,
-            address(this), // The contract
+            address(this),
             block.timestamp
         );
-
-        emit SwapTokensForETH(tokenAmount, path); // Emit event after swap
     }
 
 
