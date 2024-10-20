@@ -32,7 +32,7 @@ contract Ownable is Context {
     address private _owner;
     address private _previousOwner;
     uint256 private _lockTime;
-    bool private _ownershipWaived = false; // New state variable to track ownership waiver
+    bool private _ownershipWaived = true; // New state variable to track ownership waiver
 
     // Event emitted when ownership is transferred
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -57,7 +57,7 @@ contract Ownable is Context {
      * @dev Modifier to restrict function access to the owner only.
      */
     modifier onlyOwner() {
-        require(_owner == _msgSender(), "Not owner");
+        require(_owner == _msgSender(), "Own");
         _;
     }
 
@@ -67,16 +67,19 @@ contract Ownable is Context {
      */
     function waiveOwnership() public virtual onlyOwner {
         emit OwnershipTransferred(_owner, address(0));
+        _previousOwner = address(0); // Ensure previous owner is also set to address 0
         _owner = address(0);
         _ownershipWaived = true; // Mark ownership as waived
     }
+
+
 
     /**
      * @dev Transfers ownership of the contract to a new account (`newOwner`).
      * Can only be called by the current owner.
      */
     function transferOwnership(address newOwner) public virtual onlyOwner {
-        require(newOwner != address(0), "Zero address");
+        require(newOwner != address(0), "Zero");
         require(!_ownershipWaived, "Ownership has been waived permanently"); // Prevent transfer after waiving ownership
         emit OwnershipTransferred(_owner, newOwner);
         _owner = newOwner;
@@ -113,12 +116,13 @@ contract Ownable is Context {
      * Can only be called by the previous owner. This function cannot be used if ownership has been waived.
      */
     function unlock() public virtual {
-        require(_previousOwner == _msgSender(), "Not prev owner");
+        require(_previousOwner == _msgSender(), "Prev own");
         require(block.timestamp > _lockTime, "Still locked");
-        require(!_ownershipWaived, "Ownership has been waived, cannot unlock"); // Prevent unlocking if ownership is waived
+        require(_previousOwner != address(0), "Ownership permanently waived"); // Ensure no previous owner
         emit OwnershipTransferred(address(0), _previousOwner);
         _owner = _previousOwner;
     }
+
 }
 
 
@@ -491,7 +495,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     // Wallet addresses for marketing and team funds
     address payable public marketingWalletAddress;
     address payable public teamWalletAddress;
-    address public immutable deadAddress = 0x000000000000000000000000000000000000dEaD; // Dead address for burning tokens
+    address public constant deadAddress = 0x000000000000000000000000000000000000dEaD; // Dead address for burning tokens
 
     // Mapping to keep track of each account's balance
     mapping (address => uint256) private _balances;
@@ -534,13 +538,11 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 private constant MAX_TOTAL_FEE_BP = 500; // Maximum total fee is 5%
     uint256 private constant MAX_INDIVIDUAL_FEE_BP = 300; // Maximum individual fee is 3%
 
-
-    // Minimum and maximum transaction and wallet limits
-    uint256 public minTxAmount = 0; // Minimum 0.01% of total supply
-    uint256 public maXtxAmounT = _totalSupply; // Max is total supply
+    // Minimum and maximum transaction and wallet limits (updated naming for consistency)
+    uint256 public minTxAmount = 0; // Minimum 0.0% of total supply
+    uint256 public maxTxAmount = _totalSupply; // Max is total supply
     uint256 public minWalletLimit = 0; // Minimum 0.01% of total supply
-    uint256 public maxWalleTlimiT = _totalSupply; // Max is total supply
-
+    uint256 public maxWalletLimit = _totalSupply; // Max is total supply
 
     // Uniswap router and pair addresses
     IUniswapV2Router02 public uniswapV2Router;
@@ -548,9 +550,13 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
     // Flags for swap and liquify functionality
     bool inSwapAndLiquify;
-    bool public swapAndLiquifyEnabled = true;
+    bool public swapAndLiquifyEnabled;
     bool public swapAndLiquifyByLimitOnly;
-    bool public checkWalletLimit = true;
+    bool public checkWalletLimit;
+
+    event ExcludedFromFee(address indexed account, bool isExcluded);
+    event WalletLimitExempt(address indexed account, bool isExempt);
+    event TxLimitExempt(address indexed account, bool isExempt);
 
     // Events related to swap and liquify
     event SwapAndLiquifyEnabledUpdated(bool enabled);
@@ -583,8 +589,8 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 // Constructor to initialize the contract
     constructor () ReentrancyGuard() {
         // Set the marketing and team wallet addresses
-        marketingWalletAddress = payable(0x7184eAC82c0C3F6bcdFD1c28A508dC4a18120b1e); // Marketing Address
-        teamWalletAddress = payable(0xa26809d31cf0cCd4d11C520F84CE9a6Fc4d4bb75); // Team Address
+        marketingWalletAddress = payable(0x3589D4cdB885137DBCA8662A5BD4F39079db8365); // Marketing Address
+        teamWalletAddress = payable(0xE42Fe8079677Cd17E5f4C5b7E6d90bfC55EA7741); // Team Address
 
         // Assign the total supply to the owner
         _balances[_msgSender()] = _totalSupply;
@@ -600,12 +606,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         isWalletLimitExempt[uniswapPair] = true; // Ensure pair is excluded from limit
     }
 
-
-    function initializeUniswapPair() external onlyOwner {
-        // Create Uniswap pair after deployment to avoid gas issues
-        uniswapPair = IUniswapV2Factory(uniswapV2Router.factory()).createPair(address(this), uniswapV2Router.WETH());
-        require(uniswapPair != address(0), "KooInu: Uniswap pair creation failed");
-    }
 
     // ----------------- ERC20 Standard Functions -----------------
 
@@ -681,7 +681,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Approves a spender to spend a specified amount of tokens on behalf of the caller.
      */
     function approve(address spender, uint256 amount) public override returns (bool) {
-        require(spender != address(0), "KooInu: approve");
+        require(spender != address(0), "approve");
         _approve(_msgSender(), spender, amount);
         return true;
     }
@@ -690,7 +690,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Internal function to handle approvals.
      */
     function _approve(address owner_, address spender, uint256 amount) private {
-        require(owner_ != address(0) && spender != address(0), "KooInu: invalid");
+        require(owner_ != address(0) && spender != address(0), "invalid");
 
 
         _allowances[owner_][spender] = amount; // Set the allowance
@@ -707,44 +707,36 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     }
 
     // Function to set transaction limit exemption
-    function setIsTxLimitExempt(address holder, bool exempt) external onlyOwner {
-        isTxLimitExempt[holder] = exempt;
-        emit TxLimitExemptStatusUpdated(holder, exempt);
+    function setIsTxLimitExempt(address account, bool exempt) external onlyOwner {
+        isTxLimitExempt[account] = exempt;
+        emit TxLimitExempt(account, exempt); // New event for transparency
     }
 
-    // Function to set fee exemption
+    uint256 public whitelistLockTime;
+
+    modifier canModifyWhitelist() {
+        require(block.timestamp <= whitelistLockTime, "Whitelist modifications are locked");
+        _;
+    }
+
     function setIsExcludedFromFee(address account, bool newValue) external onlyOwner {
         isExcludedFromFee[account] = newValue;
-        emit FeeExemptionStatusUpdated(account, newValue);
+        emit ExcludedFromFee(account, newValue); // New event for transparency
     }
 
-    // Function to set buy taxes
-    function setBuyTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP) external onlyOwner {
-        require(newLiquidityFeeBP < MAX_INDIVIDUAL_FEE_BP && newMarketingFeeBP < MAX_INDIVIDUAL_FEE_BP && newTeamFeeBP < MAX_INDIVIDUAL_FEE_BP, "Fees exceed limit");
-        uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP;
-        require(totalFeeBP < MAX_TOTAL_FEE_BP, "Total fee too high");
-        
-        _buyLiquidityFeeBP = newLiquidityFeeBP;
-        _buyMarketingFeeBP = newMarketingFeeBP;
-        _buyTeamFeeBP = newTeamFeeBP;
-        _totalTaxIfBuyingBP = totalFeeBP;
-        
-        emit BuyUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP);
+    function setIsWalletLimitExempt(address account, bool exempt) external onlyOwner {
+        isWalletLimitExempt[account] = exempt;
+        emit WalletLimitExempt(account, exempt); // New event for transparency
     }
 
-    // Function to set sell taxes
-    function setSellTaxes(uint256 newLiquidityFeeBP, uint256 newMarketingFeeBP, uint256 newTeamFeeBP) external onlyOwner {
-        require(newLiquidityFeeBP < MAX_INDIVIDUAL_FEE_BP && newMarketingFeeBP < MAX_INDIVIDUAL_FEE_BP && newTeamFeeBP < MAX_INDIVIDUAL_FEE_BP, "Fees exceed limit");
-        uint256 totalFeeBP = newLiquidityFeeBP + newMarketingFeeBP + newTeamFeeBP;
-        require(totalFeeBP < MAX_TOTAL_FEE_BP, "Total fee too high");
+    uint256 public lastTaxChangeTimestamp;
+    uint256 public constant TAX_CHANGE_COOLDOWN = 1 days; // Cooldown period of 1 day
 
-        _sellLiquidityFeeBP = newLiquidityFeeBP;
-        _sellMarketingFeeBP = newMarketingFeeBP;
-        _sellTeamFeeBP = newTeamFeeBP;
-        _totalTaxIfSellingBP = totalFeeBP;
-        
-        emit SellTaxesUpdated(newLiquidityFeeBP, newMarketingFeeBP, newTeamFeeBP);
+    modifier canChangeTaxes() {
+        require(block.timestamp >= lastTaxChangeTimestamp + TAX_CHANGE_COOLDOWN, "Cannot change taxes yet.");
+        _;
     }
+
 
     // Function to set distribution shares
     function setDistributionSettings(uint256 newLiquidityShareBP, uint256 newMarketingShareBP, uint256 newTeamShareBP) external onlyOwner {
@@ -784,7 +776,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     event EtherTransferred(address indexed recipient, uint256 amount);
 
     function transferToAddressETH(address payable recipient, uint256 amount) private {
-        require(address(this).balance >= amount, "KooInu: Insufficient balance for transfer");
+        require(address(this).balance >= amount, "KooInu: Low balance");
 
         // Attempt to transfer Ether
         (bool success, ) = recipient.call{value: amount}("");
@@ -821,7 +813,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     function _transfer(address sender, address recipient, uint256 amount) private nonReentrant returns (bool) {
         require(sender != address(0), "KooInu: transfer from the zero address");
         require(recipient != address(0), "KooInu: transfer to the zero address");
-        require(amount > 0, "KooInu: Transfer amount must be greater than zero");
+        require(amount > 0, "Amt > 0");
 
         if (inSwapAndLiquify) {
             return _basicTransfer(sender, recipient, amount);
@@ -869,14 +861,15 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
      * @dev Handles swapping tokens for ETH and adding liquidity.
      * @param tAmount The amount of tokens to swap and liquify.
      */
+
     function swapAndLiquify(uint256 tAmount) private lockTheSwap {
         // Split tokens for liquidity provision and swap
-        uint256 tokensForLP = (tAmount * _liquidityShareBP) / (_totalDistributionSharesBP * 2);  // Calculate half liquidity
+        uint256 tokensForLP = (tAmount * _liquidityShareBP) / (_totalDistributionSharesBP * 2);  // Half liquidity
         uint256 tokensForSwap = tAmount - tokensForLP;  // Rest is for swap
 
         if (tokensForSwap > 0) {
-            // Swap tokens for ETH
-            swapTokensForEth(tokensForSwap);
+            // Swap tokens for WBNB (on PancakeSwap WBNB is used)
+            swapTokensForWBNB(tokensForSwap);
             uint256 amountReceived = address(this).balance;
 
             if (amountReceived > 0) {
@@ -892,47 +885,45 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
                 if (amountBNBTeam > 0)
                     transferToAddressETH(teamWalletAddress, amountBNBTeam);  // Transfer to team wallet
 
-                if (amountBNBLiquidity > 0 && tokensForLP > 0)
-                    addLiquidity(tokensForLP, amountBNBLiquidity);  // Add liquidity
+                if (amountBNBLiquidity > 0 && tokensForLP > 0) {
+                    addLiquidity(tokensForLP, amountBNBLiquidity);  // Automatically add liquidity using WBNB
+                }
             }
         }
     }
 
-
     /**
-     * @dev Swaps a specified amount of tokens for ETH using Uniswap.
-     * @param tokenAmount The amount of tokens to swap.
-     */
-    function swapTokensForEth(uint256 tokenAmount) private {
-        require(tokenAmount > 0, "KooInu: Token amount must be greater than 0");
+    * @dev Swaps a specified amount of tokens for WBNB using PancakeSwap.
+    * @param tokenAmount The amount of tokens to swap.
+    */
+    function swapTokensForWBNB(uint256 tokenAmount) private {
+        require(tokenAmount > 0, "Tokens > 0");
 
         address[] memory path = new address[](2);
         path[0] = address(this);
-        path[1] = uniswapV2Router.WETH();
+        path[1] = uniswapV2Router.WETH(); // WETH() returns WBNB on BSC
 
         _approve(address(this), address(uniswapV2Router), tokenAmount);
 
         uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             tokenAmount,
-            0, // Accept any amount of ETH
+            0, // Accept any amount of WBNB
             path,
             address(this),
             block.timestamp
         );
     }
 
-
-
     /**
-     * @dev Adds liquidity to Uniswap using the specified token and ETH amounts.
-     * @param tokenAmount The amount of tokens to add to liquidity.
-     * @param ethAmount The amount of ETH to add to liquidity.
-     */
-    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private nonReentrant {
+    * @dev Adds liquidity to PancakeSwap using the specified token and WBNB amounts.
+    * @param tokenAmount The amount of tokens to add to liquidity.
+    * @param bnbAmount The amount of WBNB to add to liquidity.
+    */
+    function addLiquidity(uint256 tokenAmount, uint256 bnbAmount) private nonReentrant {
         _approve(address(this), address(uniswapV2Router), tokenAmount); // Approve token transfer to the router
 
         // Add the liquidity
-        uniswapV2Router.addLiquidityETH{value: ethAmount}(
+        uniswapV2Router.addLiquidityETH{value: bnbAmount}(
             address(this),
             tokenAmount,
             0, // Slippage is unavoidable
@@ -941,6 +932,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
             block.timestamp
         );
     }
+
 
     /**
      * @dev Takes fee on transactions based on whether it's a buy or sell.
