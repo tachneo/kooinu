@@ -32,7 +32,7 @@ contract Ownable is Context {
     address private _owner;
     address private _previousOwner;
     uint256 private _lockTime;
-    bool private _ownershipWaived = true; // New state variable to track ownership waiver
+    bool private _ownershipWaived; // New state variable to track ownership waiver
 
     // Event emitted when ownership is transferred
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -714,12 +714,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         emit TxLimitExempt(account, exempt); // New event for transparency
     }
 
-    uint256 public whitelistLockTime;
-
-    modifier canModifyWhitelist() {
-        require(block.timestamp <= whitelistLockTime, "Whitelist modifications are locked");
-        _;
-    }
 
     function setIsExcludedFromFee(address account, bool newValue) external onlyOwner {
         isExcludedFromFee[account] = newValue;
@@ -759,9 +753,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         emit SellFeesUpdated(liquidityFeeBP, marketingFeeBP, teamFeeBP);
     }
 
-    // Add events
-    event BuyFeesUpdated(uint256 liquidityFeeBP, uint256 marketingFeeBP, uint256 teamFeeBP);
-    event SellFeesUpdated(uint256 liquidityFeeBP, uint256 marketingFeeBP, uint256 teamFeeBP);
 
     // Function to set distribution shares
     function setDistributionSettings(uint256 newLiquidityShareBP, uint256 newMarketingShareBP, uint256 newTeamShareBP) external onlyOwner {
@@ -847,14 +838,27 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         } else {
             require(_balances[sender] >= amount, "KooInu: Insufficient balance for transfer");
             
-            // Subtract balance before external calls to prevent reentrancy attacks
+            // Subtract balance from sender first
             _balances[sender] = _balances[sender] - amount;
 
-            uint256 finalAmount = (isExcludedFromFee[sender] || isExcludedFromFee[recipient]) ? amount : takeFee(sender, recipient, amount);
+            // Calculate final amount after fees
+            uint256 finalAmount = (isExcludedFromFee[sender] || isExcludedFromFee[recipient]) 
+                ? amount 
+                : takeFee(sender, recipient, amount);
 
+            // Check wallet limit BEFORE updating recipient's balance
+            if (!isWalletLimitExempt[recipient]) {
+                require(
+                    _balances[recipient] + finalAmount <= maxWalletLimit,
+                    "Exceeds max wallet limit"
+                );
+            }
+
+            // Update recipient's balance
             _balances[recipient] += finalAmount;
             emit Transfer(sender, recipient, finalAmount);
 
+            // Rest of the logic (swapAndLiquify checks)
             uint256 contractTokenBalance = balanceOf(address(this));
             bool overMinimumTokenBalance = contractTokenBalance >= minimumTokensBeforeSwap;
 
@@ -891,7 +895,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
     function swapAndLiquify(uint256 tAmount) private lockTheSwap {
         // Split tokens for liquidity provision and swap
-        uint256 tokensForLP = (tAmount * _liquidityShareBP) / (_totalDistributionSharesBP * 2);  // Half liquidity
+        uint256 tokensForLP = (tAmount * _liquidityShareBP) / _totalDistributionSharesBP / 2; // Correct split  // Half liquidity
         uint256 tokensForSwap = tAmount - tokensForLP;  // Rest is for swap
 
         if (tokensForSwap > 0) {
@@ -978,14 +982,12 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
         if(isBuy || isSell) {
             uint256 totalTaxBP = isBuy ? _totalTaxIfBuyingBP : _totalTaxIfSellingBP;
-            uint256 scaledAmount = amount * 1e18; 
-            feeAmount = (scaledAmount * totalTaxBP) / 10000;
-            feeAmount = feeAmount / 1e18;  // Scale back down
+            feeAmount = (amount * totalTaxBP) / 10000; // Direct calculation
 
         }
 
 
-        if(feeAmount >= 0) {
+        if(feeAmount > 0) {
             _balances[address(this)] += feeAmount; // Add fee to contract balance
             emit Transfer(sender, address(this), feeAmount); // Emit transfer event for fee
         }
@@ -1041,13 +1043,13 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     /**
      * @dev Emitted when the buy taxes are updated.
      */
-    event BuyUpdated(uint256 lFeeBP, uint256 mFeeBP, uint256 tFeeBP);
+    event BuyFeesUpdated(uint256 lFeeBP, uint256 mFeeBP, uint256 tFeeBP);
 
 
     /**
      * @dev Emitted when the sell taxes are updated.
      */
-    event SellTaxesUpdated(uint256 liquidityFeeBP, uint256 marketingFeeBP, uint256 teamFeeBP);
+    event SellFeesUpdated(uint256 liquidityFeeBP, uint256 marketingFeeBP, uint256 teamFeeBP);
 
     /**
      * @dev Emitted when the distribution shares are updated.
