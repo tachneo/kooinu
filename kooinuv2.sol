@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity ^0.8.21;
 
 /**
  * @title Koo Inu (KOO) Smart Contract
@@ -99,29 +99,7 @@ contract Ownable is Context {
         return block.timestamp;
     }
 
-    /**
-     * @dev Locks the contract for the owner for the specified amount of time.
-     * Can only be called by the current owner. This function cannot be used if ownership has been waived.
-     */
-    function lock(uint256 time) public virtual onlyOwner {
-        require(!_ownershipWaived, "Ownership has been waived, cannot lock"); // Prevent locking if ownership is waived
-        _previousOwner = _owner;
-        _owner = address(0);
-        _lockTime = block.timestamp + time;
-        emit OwnershipTransferred(_owner, address(0));
-    }
 
-    /**
-     * @dev Unlocks the contract for the owner after the lock time has passed.
-     * Can only be called by the previous owner. This function cannot be used if ownership has been waived.
-     */
-    function unlock() public virtual {
-        require(_previousOwner == _msgSender(), "Prev own");
-        require(block.timestamp > _lockTime, "Still locked");
-        require(_previousOwner != address(0), "Ownership permanently waived"); // Ensure no previous owner
-        emit OwnershipTransferred(address(0), _previousOwner);
-        _owner = _previousOwner;
-    }
 
 }
 
@@ -538,12 +516,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 private constant MAX_TOTAL_FEE_BP = 500; // Maximum total fee is 5%
     uint256 private constant MAX_INDIVIDUAL_FEE_BP = 300; // Maximum individual fee is 3%
 
-    // Minimum and maximum transaction and wallet limits (updated naming for consistency)
-    uint256 public minTxAmount = 0; // Minimum 0.0% of total supply
-    uint256 public maxTxAmount = _totalSupply; // Max is total supply
-    uint256 public minWalletLimit = 0; // Minimum 0.01% of total supply
-    uint256 public maxWalletLimit = _totalSupply; // Max is total supply
-
     // Uniswap router and pair addresses
     IUniswapV2Router02 public uniswapV2Router;
     address public uniswapPair;
@@ -552,7 +524,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     bool inSwapAndLiquify;
     bool public swapAndLiquifyEnabled;
     bool public swapAndLiquifyByLimitOnly;
-    bool public checkWalletLimit;
 
     event ExcludedFromFee(address indexed account, bool isExcluded);
     event WalletLimitExempt(address indexed account, bool isExempt);
@@ -589,7 +560,8 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     constructor (
         uint256 bnbForLiquidity,
         address payable _marketingWallet,
-        address payable _teamWallet
+        address payable _teamWallet,
+        address _routerAddress
     ) ReentrancyGuard() payable {
         // Set configurable wallets
         marketingWalletAddress = _marketingWallet;
@@ -603,7 +575,9 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         _balances[address(this)] = liquidityTokens;
 
         // Initialize PancakeSwap
-        IUniswapV2Router02 _pancakeRouter = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+        require(_routerAddress != address(0), "Invalid router");
+        require(IUniswapV2Router02(_routerAddress).WETH() != address(0), "Invalid router");
+        IUniswapV2Router02 _pancakeRouter = IUniswapV2Router02(_routerAddress);
         uniswapPair = IUniswapV2Factory(_pancakeRouter.factory()).createPair(address(this), _pancakeRouter.WETH());
         uniswapV2Router = _pancakeRouter;
 
@@ -870,13 +844,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
                 ? amount 
                 : takeFee(sender, recipient, amount);
 
-            // Check wallet limit BEFORE updating recipient's balance
-            if (!isWalletLimitExempt[recipient]) {
-                require(
-                    _balances[recipient] + finalAmount <= maxWalletLimit,
-                    "Exceeds max wallet limit"
-                );
-            }
 
             // Update recipient's balance
             _balances[recipient] += finalAmount;
@@ -933,7 +900,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
                 uint256 amountBNBLiquidity = (amountReceived * _liquidityShareBP) / totalBNBFee / 2;
                 uint256 amountBNBTeam = (amountReceived * _teamShareBP) / totalBNBFee;
-                uint256 amountBNBMarketing = amountReceived - amountBNBLiquidity - amountBNBTeam;
+                uint256 amountBNBMarketing = (amountReceived * _marketingShareBP) / _totalDistributionSharesBP;
 
                 if (amountBNBMarketing > 0)
                     transferToAddressETH(marketingWalletAddress, amountBNBMarketing);  // Transfer to marketing wallet
@@ -979,7 +946,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
         _approve(address(this), address(uniswapV2Router), tokenAmount); // Approve token transfer to the router
 
         // Add the liquidity
-        address liquidityReceiver = owner() != address(0) ? owner() : deadAddress;
+        address liquidityReceiver = _msgSender(); // Send LP tokens to deployer directly
         uniswapV2Router.addLiquidityETH{value: bnbAmount}(
             address(this),
             tokenAmount,
@@ -1021,31 +988,6 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
     // ----------------- Withdrawal Functions -----------------
 
-    /**
-     * @dev Withdraws Ether from the contract to the owner's address.
-     * @param amount The amount of Ether to withdraw in wei.
-     */
-    // Add event for Ether withdrawal
-    event EtherWithdrawn(address indexed owner, uint256 amount);
-
-    function withdrawEther(uint256 amount) external onlyOwner nonReentrant {
-        require(address(this).balance > amount, "KooInu: low balance");
-        // Line 1074 (Ether Withdraw Function)
-        (bool success, ) = payable(owner()).call{value: amount}("");
-        require(success, "KooInu: ETH transfer failed.");
-        emit EtherWithdrawn(owner(), amount);
-    }
-
-
-
-    // Add event for ERC20 withdrawal
-    event ERC20Withdrawn(address indexed owner, address indexed token, uint256 amount);
-
-    function withdrawERC20(address tokenAddress, uint256 tokenAmount) external onlyOwner nonReentrant {
-        require(tokenAddress != address(this), "KooInu: Cannot withdraw");
-        IERC20(tokenAddress).transfer(owner(), tokenAmount);
-        emit ERC20Withdrawn(owner(), tokenAddress, tokenAmount);
-    }
 
     // ----------------- Event Declarations for Enhanced Access Control Transparency -----------------
 
