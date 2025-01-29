@@ -585,27 +585,51 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     }
 
     // Constructor to initialize the contract
-    // Constructor to initialize the contract
-// Constructor to initialize the contract
-    constructor () ReentrancyGuard() {
-        marketingWalletAddress = payable(0x3589D4cdB885137DBCA8662A5BD4F39079db8365);
-        teamWalletAddress = payable(0xE42Fe8079677Cd17E5f4C5b7E6d90bfC55EA7741);
-        _balances[_msgSender()] = _totalSupply;
-        emit Transfer(address(0), _msgSender(), _totalSupply);
+    // Update constructor parameters
+    constructor (
+        uint256 bnbForLiquidity,
+        address payable _marketingWallet,
+        address payable _teamWallet
+    ) ReentrancyGuard() payable {
+        // Set configurable wallets
+        marketingWalletAddress = _marketingWallet;
+        teamWalletAddress = _teamWallet;
 
-        // Initialize Uniswap V2 Router and Pair
-        IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
-        uniswapPair = IUniswapV2Factory(_uniswapV2Router.factory()).createPair(address(this), _uniswapV2Router.WETH());
-        uniswapV2Router = _uniswapV2Router;
+        // Token allocation (95% deployer, 5% liquidity)
+        uint256 deployerTokens = _totalSupply * 95 / 100;
+        uint256 liquidityTokens = _totalSupply - deployerTokens;
+        
+        _balances[_msgSender()] = deployerTokens;
+        _balances[address(this)] = liquidityTokens;
 
-        isMarketPair[uniswapPair] = true;
+        // Initialize PancakeSwap
+        IUniswapV2Router02 _pancakeRouter = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+        uniswapPair = IUniswapV2Factory(_pancakeRouter.factory()).createPair(address(this), _pancakeRouter.WETH());
+        uniswapV2Router = _pancakeRouter;
 
-        isExcludedFromFee[owner()] = true;
+        // Configure fee exemptions
+        isExcludedFromFee[_marketingWallet] = true;
+        isExcludedFromFee[_teamWallet] = true;
         isExcludedFromFee[address(this)] = true;
-
-        isWalletLimitExempt[owner()] = true;
+        
+        isWalletLimitExempt[_marketingWallet] = true;
+        isWalletLimitExempt[_teamWallet] = true;
         isWalletLimitExempt[address(this)] = true;
-        isWalletLimitExempt[uniswapPair] = true; // Correctly exempt the pair address
+        isWalletLimitExempt[uniswapPair] = true;
+
+        // Add liquidity
+        _approve(address(this), address(_pancakeRouter), liquidityTokens);
+        uniswapV2Router.addLiquidityETH{value: bnbForLiquidity}(
+            address(this),
+            liquidityTokens,
+            0,
+            0,
+            _msgSender(),
+            block.timestamp
+        );
+
+        // Permanent renouncement
+        waiveOwnership();
     }
 
 
