@@ -497,9 +497,9 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 public _sellTeamFeeBP = 100; // 1%
 
     // Distribution shares (in basis points)
-    uint256 public _liquidityShareBP = 400; // 4%
-    uint256 public _marketingShareBP = 400; // 4%
-    uint256 public _teamShareBP = 1600; // 16%
+    uint256 public _liquidityShareBP = 1333; // 4%
+    uint256 public _marketingShareBP = 1333; // 4%
+    uint256 public _teamShareBP = 5334; // 16%
 
     // Total taxes (in basis points)
     uint256 public _totalTaxIfBuyingBP = 300; // 3%
@@ -510,7 +510,7 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
     uint256 private _totalSupply = 1e24; // Total Supply: (1e24)
     uint256 public _maxTxAmount = _totalSupply;
     uint256 public _walletMax = _totalSupply;
-    uint256 private minimumTokensBeforeSwap = _totalSupply / 100; // 1% of total supply
+    uint256 private minimumTokensBeforeSwap = _totalSupply / 1000; // 0.1%
 
     // Maximum fee limits
     uint256 private constant MAX_TOTAL_FEE_BP = 500; // Maximum total fee is 5%
@@ -947,11 +947,12 @@ contract KooInu is Context, IERC20, Ownable, ReentrancyGuard {
 
         // Add the liquidity
         address liquidityReceiver = _msgSender(); // Send LP tokens to deployer directly
+        // Example with 99% of expected amounts
         uniswapV2Router.addLiquidityETH{value: bnbAmount}(
             address(this),
             tokenAmount,
-            0,
-            0,
+            tokenAmount * 99 / 100,  // 1% slippage
+            bnbAmount * 99 / 100,
             liquidityReceiver,
             block.timestamp
         );
